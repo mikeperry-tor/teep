@@ -40,6 +40,7 @@ import (
 	"github.com/13rac1/teep/internal/provider"
 	"github.com/13rac1/teep/internal/provider/nearcloud"
 	"github.com/13rac1/teep/internal/provider/neardirect"
+	"github.com/13rac1/teep/internal/provider/phalacloud"
 	"github.com/13rac1/teep/internal/provider/venice"
 	"github.com/13rac1/teep/internal/tlsct"
 )
@@ -293,8 +294,14 @@ func fromConfig(
 			pocSigningKey,
 		)
 		p.ModelLister = neardirect.NewModelLister(cp.BaseURL, cp.APIKey, config.NewAttestationClient(offline))
+	case "phalacloud":
+		p.ChatPath = "/chat/completions"
+		p.Attester = phalacloud.NewAttester(cp.BaseURL, cp.APIKey, offline)
+		p.Preparer = phalacloud.NewPreparer(cp.APIKey)
+		p.ReportDataVerifier = phalacloud.ReportDataVerifier{}
+		p.ModelLister = phalacloud.NewModelLister(cp.BaseURL, cp.APIKey, config.NewAttestationClient(offline))
 	default:
-		return nil, fmt.Errorf("unknown provider %q (supported: venice, neardirect, nearcloud)", cp.Name)
+		return nil, fmt.Errorf("unknown provider %q (supported: venice, neardirect, nearcloud, phalacloud)", cp.Name)
 	}
 	return p, nil
 }

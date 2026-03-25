@@ -29,6 +29,7 @@ import (
 	"github.com/13rac1/teep/internal/provider"
 	"github.com/13rac1/teep/internal/provider/nearcloud"
 	"github.com/13rac1/teep/internal/provider/neardirect"
+	"github.com/13rac1/teep/internal/provider/phalacloud"
 	"github.com/13rac1/teep/internal/provider/venice"
 	"github.com/13rac1/teep/internal/proxy"
 )
@@ -453,8 +454,10 @@ func newAttester(name string, cp *config.Provider, offline ...bool) provider.Att
 		return neardirect.NewAttester(cp.BaseURL, cp.APIKey, off)
 	case "nearcloud":
 		return nearcloud.NewAttester(cp.APIKey, off)
+	case "phalacloud":
+		return phalacloud.NewAttester(cp.BaseURL, cp.APIKey, off)
 	default:
-		slog.Error("unknown provider", "provider", name, "supported", "venice, neardirect, nearcloud")
+		slog.Error("unknown provider", "provider", name, "supported", "venice, neardirect, nearcloud, phalacloud")
 		os.Exit(1)
 		return nil // unreachable
 	}
@@ -466,6 +469,8 @@ func newReportDataVerifier(name string) provider.ReportDataVerifier {
 		return venice.ReportDataVerifier{}
 	case "neardirect", "nearcloud":
 		return neardirect.ReportDataVerifier{}
+	case "phalacloud":
+		return phalacloud.ReportDataVerifier{}
 	default:
 		return nil
 	}
