@@ -57,7 +57,7 @@ report-nearcloud: build ## Verify NearCloud gateway attestation (requires NEARAI
 	./teep verify nearcloud --model Qwen/Qwen3.5-122B-A10B --log-level debug --save-dir /tmp/teep-attestation-nearcloud
 
 report-phalacloud: build ## Verify Phala Cloud attestation (requires PHALA_API_KEY)
-	./teep verify phalacloud --model phala/deepseek-chat-v3-0324 --log-level debug --save-dir /tmp/teep-attestation-phalacloud
+	./teep verify phalacloud --model phala/deepseek-v3.2 --log-level debug --save-dir /tmp/teep-attestation-phalacloud
 
 e2e-venice: ## Run Venice E2E test (requires VENICE_API_KEY)
 	./test/e2e-venice.sh

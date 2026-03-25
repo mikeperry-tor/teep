@@ -146,6 +146,7 @@ var providerEnvVars = map[string]string{
 	"venice":     "VENICE_API_KEY",
 	"neardirect": "NEARAI_API_KEY",
 	"nearcloud":  "NEARAI_API_KEY",
+	"phalacloud": "PHALA_API_KEY",
 }
 
 // providerNotFoundError returns a descriptive error when a provider is not configured.
@@ -470,7 +471,8 @@ func newReportDataVerifier(name string) provider.ReportDataVerifier {
 	case "neardirect", "nearcloud":
 		return neardirect.ReportDataVerifier{}
 	case "phalacloud":
-		return phalacloud.ReportDataVerifier{}
+		// Chutes format has no signing_address; REPORTDATA binding is unknown.
+		return nil
 	default:
 		return nil
 	}

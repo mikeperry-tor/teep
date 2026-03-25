@@ -39,6 +39,7 @@ func TestLoadDefaults(t *testing.T) {
 	unsetenv(t, "TEEP_LISTEN_ADDR")
 	unsetenv(t, "VENICE_API_KEY")
 	unsetenv(t, "NEARAI_API_KEY")
+	unsetenv(t, "PHALA_API_KEY")
 
 	cfg, err := Load()
 	if err != nil {
