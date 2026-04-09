@@ -323,6 +323,45 @@ The inference-proxy's `encrypt_chat_response_choices` must be extended to encryp
 
 6. **Decrypt `tool_calls[].function.arguments` in request messages.** For multi-turn tool calling, assistant messages include tool_calls that should be decryptable.
 
+### Alternate Protocols — Full-Body Encryption
+
+The field-level encryption approach used by the inference-proxy is inherently fragile: every new or changed JSON field must be explicitly added to the encryption logic, and omissions silently leak data. Two alternative protocols demonstrate that full-body encryption eliminates this class of vulnerability entirely.
+
+#### Chutes: ML-KEM-768 + ChaCha20-Poly1305 Full-Body Encryption
+
+The [Chutes](https://chutes.ai) provider uses a fundamentally different E2EE architecture. Instead of encrypting individual JSON fields, the entire HTTP request body is encrypted as a single binary blob:
+
+1. **Key exchange**: Client performs ML-KEM-768 (post-quantum) KEM encapsulation with the server's public key (attested via TDX REPORTDATA binding).
+2. **Key derivation**: Both sides derive symmetric keys via HKDF-SHA256 with distinct info labels (`"e2e-req-v1"`, `"e2e-resp-v1"`, `"e2e-stream-v1"`).
+3. **Request encryption**: The full JSON body is gzipped and encrypted with ChaCha20-Poly1305 as a single AEAD operation. The wire format is `[KEM_CT(1088) || nonce(12) || ciphertext || tag(16)]`, sent as `Content-Type: application/octet-stream` to `/e2e/invoke`.
+4. **Response encryption**: Non-streaming responses use the same full-body scheme. Streaming responses use per-chunk ChaCha20-Poly1305 encryption with a key derived from an `e2e_init` SSE event.
+
+Because the entire body is a single ciphertext, there are **no field coverage gaps** — tool calls, logprobs, refusals, function names, and any future fields are all encrypted by construction. Adding new response fields to the OpenAI API requires zero changes to the encryption layer.
+
+This approach is already deployed in production by Chutes and by third-party providers that route to Chutes backends (NanoGPT, Redpill/Phala). A reference client implementation is available in the [teep](https://github.com/rainwaterlike/teep) source code (`internal/e2ee/chutes.go`).
+
+#### Tinfoil EHBP: HPKE Full-Body Encryption
+
+[Tinfoil's Encrypted HTTP Body Protocol](https://github.com/tinfoilsh/encrypted-http-body-protocol) (EHBP) takes a similar full-body approach using [HPKE (RFC 9180)](https://www.rfc-editor.org/rfc/rfc9180.html):
+
+1. **Key discovery**: Client fetches the server's HPKE public key from `/.well-known/hpke-keys`.
+2. **Request encryption**: Client establishes an HPKE encryption context to the server's public key, encrypts the request body as a stream of length-prefixed AES-256-GCM chunks, and includes the HPKE encapsulated key in an `Ehbp-Encapsulated-Key` header.
+3. **Response encryption**: Server derives response encryption keys from the HPKE context via an exported secret (label `"ehbp response"`), a random nonce, and HKDF. The response body is encrypted as AES-256-GCM chunks with the nonce returned in an `Ehbp-Response-Nonce` header.
+
+EHBP preserves standard HTTP semantics — headers, methods, URLs, and query parameters remain in the clear for routing, while only the body is sealed. Like Chutes, this means **all JSON fields are encrypted by construction** with no per-field dispatch logic.
+
+EHBP has reference implementations in Go (server middleware + client transport), JavaScript/TypeScript, and Swift. It is used in production by Tinfoil for confidential AI inference on NVIDIA confidential computing GPUs, and by downstream integrators such as PPQ.ai and DeepJournal.
+
+#### Implications for the Inference-Proxy
+
+Both Chutes and EHBP demonstrate that full-body encryption is practical for OpenAI-compatible inference APIs, including streaming responses. Adopting a full-body encryption protocol in the inference-proxy would:
+
+- **Eliminate the field coverage gap entirely.** No per-field encryption logic means no fields can be accidentally omitted.
+- **Remove ongoing maintenance burden.** New OpenAI API fields (e.g., future tool calling extensions, structured outputs metadata) would be encrypted automatically.
+- **Simplify the gateway fix.** The gateway would only need to forward a small number of protocol headers (e.g., encapsulated key, response nonce), rather than managing field-level encryption context across multiple endpoint handlers.
+
+The existing field-level approach could be retained as a backward-compatible mode, but a full-body protocol should be the recommended path for complete E2EE coverage.
+
 ## Teep Status
 
 [Teep](https://github.com/rainwaterlike/teep) is a secure LLM inference API proxy that verifies TEE attestation and applies E2EE before forwarding requests. It is used as the test harness for the findings in this document.
