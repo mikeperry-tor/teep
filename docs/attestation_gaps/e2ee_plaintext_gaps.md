@@ -160,6 +160,8 @@ On the request side, `decrypt_chat_message_fields` similarly only decrypts `cont
 
 7. **Refusal text reveals user intent.** The `refusal` field contains the model's reason for refusing a request (e.g., "I cannot assist with creating malware"). This plaintext field reveals what the user asked about even when the input was encrypted.
 
+8. **Affects all providers using the inference-proxy.** The inference-proxy is not exclusive to NearCloud — it is also deployed by third-party providers including Venice, Redpill/Phala, NanoGPT, and others. These providers operate their own gateway infrastructure but rely on the same inference-proxy for model serving. The incomplete field encryption means that even when users explicitly enable E2EE to protect their traffic from observation by these providers, tool call arguments, function names, refusal text, and logprobs remain visible to the provider in plaintext. This gives providers access to sensitive user-derived data that users believed was encrypted, creating a risk of data extraction and potential monetization by any provider in the ecosystem.
+
 ## Reproducing the Issues
 
 All tests below are Go integration tests that make live API calls to `cloud-api.near.ai` and require a valid `NEARAI_API_KEY`. The test source is in `internal/e2ee/nearcloud_e2ee_integration_test.go` in the [teep](https://github.com/rainwaterlike/teep) repository.
