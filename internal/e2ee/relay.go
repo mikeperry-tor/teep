@@ -546,7 +546,7 @@ func DecryptFieldOrSkip(raw json.RawMessage, session Decryptor, requiresEncrypte
 // decryptJSONArrayObjects parses an array of JSON objects, lets visit mutate each
 // object, and re-marshals the array if any item changed. If strict is false and raw
 // is not an array of objects, the helper returns (nil, false, nil).
-func decryptJSONArrayObjects(raw json.RawMessage, strict bool, parseContext string, visit func(i int, item map[string]json.RawMessage) (bool, error)) (json.RawMessage, bool, error) {
+func decryptJSONArrayObjects(raw json.RawMessage, strict bool, parseContext string, visit func(i int, item map[string]json.RawMessage) (bool, error)) (out json.RawMessage, changed bool, err error) {
 	var items []map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &items); err != nil {
 		if strict {
@@ -555,7 +555,6 @@ func decryptJSONArrayObjects(raw json.RawMessage, strict bool, parseContext stri
 		return nil, false, nil
 	}
 
-	changed := false
 	for i := range items {
 		itemChanged, err := visit(i, items[i])
 		if err != nil {
@@ -569,7 +568,7 @@ func decryptJSONArrayObjects(raw json.RawMessage, strict bool, parseContext stri
 	if !changed {
 		return nil, false, nil
 	}
-	out, _ := json.Marshal(items) //nolint:errchkjson // re-marshaling previously-unmarshaled JSON
+	out, _ = json.Marshal(items) //nolint:errchkjson // re-marshaling previously-unmarshaled JSON
 	return out, true, nil
 }
 

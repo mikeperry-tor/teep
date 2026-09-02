@@ -29,6 +29,8 @@ var dstackMRTDAllow = map[string]struct{}{
 	"b24d3b24e9e3c16012376b52362ca09856c4adecb709d5fac33addf1c47e193da075b125b6c364115771390a5461e217": {},
 	// dstack-nvidia-0.5.5 (os_image_hash da9a3d...)
 	"f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077": {},
+	// dstack-nvidia-0.5.11 (os_image_hash a6eafc...)
+	"df4d77c857de652bd0fafa343a2026b51071ee03773d076d283abf1a7d36ff91ffa279ee4a617ac664f7e2a2c8d5891b": {},
 }
 
 // DstackBaseMeasurementPolicy returns a MeasurementPolicy with the shared

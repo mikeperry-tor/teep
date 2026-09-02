@@ -97,6 +97,7 @@ type nearModelEntry struct {
 	IsReady         bool            `json:"is_ready,omitempty"`
 	Datacenters     json.RawMessage `json:"datacenters,omitempty"`
 	Openrouter      json.RawMessage `json:"openrouter,omitempty"`
+	TextPricing     json.RawMessage `json:"textPricing,omitempty"`
 }
 
 // tinfoilModelEntry matches the Tinfoil /v1/models entry schema. Used by

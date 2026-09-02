@@ -2,9 +2,13 @@ package attestation
 
 import (
 	"crypto/sha512"
+	"crypto/subtle"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 )
+
+const dstackRuntimeEventType = 0x08000001
 
 // ReplayEventLog replays event log entries to recompute the four RTMR values.
 // Each entry extends the RTMR at its IMR index: RTMR_new = SHA384(RTMR_old || digest).
@@ -19,9 +23,9 @@ func ReplayEventLog(entries []EventLogEntry) ([4][48]byte, error) {
 			return rtmrs, fmt.Errorf("event %d: IMR index %d out of range [0,3]", i, e.IMR)
 		}
 
-		digest, err := hex.DecodeString(e.Digest)
+		digest, err := eventDigest(e)
 		if err != nil {
-			return rtmrs, fmt.Errorf("event %d: invalid hex digest: %w", i, err)
+			return rtmrs, fmt.Errorf("event %d: %w", i, err)
 		}
 
 		if len(digest) < 48 {
@@ -37,4 +41,43 @@ func ReplayEventLog(entries []EventLogEntry) ([4][48]byte, error) {
 	}
 
 	return rtmrs, nil
+}
+
+// eventDigest returns the digest extended into an RTMR. dstack runtime events
+// authenticate their name and payload instead of supplying a stored digest.
+func eventDigest(e EventLogEntry) ([]byte, error) {
+	if e.EventType != dstackRuntimeEventType {
+		digest, err := hex.DecodeString(e.Digest)
+		if err != nil {
+			return nil, fmt.Errorf("invalid hex digest: %w", err)
+		}
+		return digest, nil
+	}
+
+	payload, err := hex.DecodeString(e.EventPayload)
+	if err != nil {
+		return nil, fmt.Errorf("runtime event %q has invalid hex payload: %w", e.Event, err)
+	}
+
+	h := sha512.New384()
+	var eventType [4]byte
+	binary.LittleEndian.PutUint32(eventType[:], uint32(e.EventType))
+	h.Write(eventType[:])
+	h.Write([]byte(":"))
+	h.Write([]byte(e.Event))
+	h.Write([]byte(":"))
+	h.Write(payload)
+	digest := h.Sum(nil)
+
+	if e.Digest == "" {
+		return digest, nil
+	}
+	stored, err := hex.DecodeString(e.Digest)
+	if err != nil {
+		return nil, fmt.Errorf("runtime event %q has invalid hex digest: %w", e.Event, err)
+	}
+	if len(stored) != len(digest) || subtle.ConstantTimeCompare(stored, digest) != 1 {
+		return nil, fmt.Errorf("runtime event %q digest does not match its payload", e.Event)
+	}
+	return digest, nil
 }

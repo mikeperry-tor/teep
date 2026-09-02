@@ -27,10 +27,15 @@ func nearDirectVLModel() string {
 		}
 		return "neardirect:" + m
 	}
-	return "neardirect:Qwen/Qwen3-VL-30B-A3B-Instruct"
+	return "neardirect:z-ai/glm-5.3-flash"
 }
 
 func TestNearDirectVLModel_PrefixHandling(t *testing.T) {
+	t.Setenv("NEARAI_VL_MODEL", "")
+	if got, want := nearDirectVLModel(), "neardirect:z-ai/glm-5.3-flash"; got != want {
+		t.Fatalf("nearDirectVLModel() = %q, want %q", got, want)
+	}
+
 	t.Setenv("NEARAI_VL_MODEL", "Qwen/Qwen3-VL-30B-A3B-Instruct")
 	if got, want := nearDirectVLModel(), "neardirect:Qwen/Qwen3-VL-30B-A3B-Instruct"; got != want {
 		t.Fatalf("nearDirectVLModel() = %q, want %q", got, want)
@@ -79,7 +84,8 @@ func TestIntegration_NearDirect_VL(t *testing.T) {
 			]
 		}],
 		"stream": false,
-		"max_tokens": 50
+		"max_tokens": 50,
+		"reasoning_effort": "none"
 	}`, model, testPNG())
 
 	resp, err := integrationPostJSON(t, proxySrv.URL+"/v1/chat/completions", body)
@@ -122,7 +128,8 @@ func TestIntegration_NearDirect_VL_E2EE(t *testing.T) {
 			]
 		}],
 		"stream": true,
-		"max_tokens": 50
+		"max_tokens": 50,
+		"reasoning_effort": "none"
 	}`, model, testPNG())
 
 	resp, err := integrationPostJSON(t, proxySrv.URL+"/v1/chat/completions", body)

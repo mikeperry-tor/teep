@@ -210,7 +210,7 @@ func TestOwnedByModelLister_FiltersModels(t *testing.T) {
 				"hugging_face_id": "org/near-model", "is_ready": true, "context_length": 8192,
 				"max_output_length": 4096, "input_modalities": ["text"], "output_modalities": ["text"],
 				"supported_features": ["chat"], "supported_sampling_parameters": ["temperature"],
-				"pricing": {}, "architecture": {}, "datacenters": [], "openrouter": null, "top_provider": {}
+				"pricing": {}, "architecture": {}, "datacenters": [], "openrouter": null, "top_provider": {}, "textPricing": {}
 			},
 			{
 				"id": "third-party", "object": "model", "created": 1700000000, "owned_by": "openai",

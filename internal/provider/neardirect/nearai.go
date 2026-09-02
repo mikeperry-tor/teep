@@ -38,12 +38,22 @@ const (
 	// and model_attestations arrays to prevent memory exhaustion from a
 	// malicious response.
 	maxAttestationEntries = 256
+
+	maxComposeManagerActions = 10_000
 )
 
 // tcbInfo holds the parsed info.tcb_info object from NEAR AI's attestation
 // response. Contains the docker-compose manifest needed for supply-chain checks.
 type tcbInfo struct {
 	AppCompose string `json:"app_compose"`
+}
+
+type modelInfo struct {
+	AppName     string  `json:"app_name"`
+	ComposeHash string  `json:"compose_hash"`
+	OSImageHash string  `json:"os_image_hash"`
+	DeviceID    string  `json:"device_id"`
+	TCBInfo     tcbInfo `json:"tcb_info"`
 }
 
 // UnmarshalJSON handles tcb_info being either a direct JSON object or a
@@ -65,13 +75,30 @@ type modelAttestation struct {
 	TLSCertFingerprint string                      `json:"tls_cert_fingerprint"`
 	RequestNonce       string                      `json:"request_nonce"`
 	EventLog           []attestation.EventLogEntry `json:"event_log"`
-	Info               struct {
-		AppName     string  `json:"app_name"`
-		ComposeHash string  `json:"compose_hash"`
-		OSImageHash string  `json:"os_image_hash"`
-		DeviceID    string  `json:"device_id"`
-		TCBInfo     tcbInfo `json:"tcb_info"`
-	} `json:"info"`
+	Info               modelInfo                   `json:"info"`
+}
+
+type ohttpAttestation struct {
+	SigningAlgo string `json:"signing_algo"`
+	SigningKey  string `json:"signing_key"`
+	KeyConfig   string `json:"key_config"`
+	Signature   string `json:"signature"`
+}
+
+type composeManagerAttestation struct {
+	Actions []struct {
+		Timestamp string `json:"timestamp"`
+		Action    string `json:"action"`
+		Container string `json:"container"`
+		Image     string `json:"image"`
+	} `json:"actions"`
+	ActionsHash string `json:"actions_hash"`
+	Nonce       string `json:"nonce"`
+	NonceSource string `json:"nonce_source"`
+	Quote       string `json:"quote"`
+	EventLog    string `json:"event_log"`
+	ReportData  string `json:"report_data"`
+	VMConfig    string `json:"vm_config"`
 }
 
 // attestationResponse is the JSON shape returned by NEAR AI's attestation
@@ -80,28 +107,33 @@ type modelAttestation struct {
 type attestationResponse struct {
 	// ModelAttestations is the primary response field: an array of per-node
 	// attestation records.
-	ModelAttestations []modelAttestation `json:"model_attestations"`
-	AllAttestations   []modelAttestation `json:"all_attestations"`
+	ModelAttestations []modelAttestation `json:"model_attestations,omitempty"`
+	AllAttestations   []modelAttestation `json:"all_attestations,omitempty"`
 
 	// Top-level fields are present when the server returns a flat response
 	// rather than the array form. Both forms are tolerated.
-	ModelName          string                      `json:"model_name"`
-	IntelQuote         string                      `json:"intel_quote"`
-	NvidiaPayload      string                      `json:"nvidia_payload"`
-	SigningPublicKey   string                      `json:"signing_public_key"`
-	SigningAddress     string                      `json:"signing_address"`
-	SigningAlgo        string                      `json:"signing_algo"`
-	TLSCertFingerprint string                      `json:"tls_cert_fingerprint"`
-	RequestNonce       string                      `json:"request_nonce"`
-	Verified           bool                        `json:"verified"`
-	EventLog           []attestation.EventLogEntry `json:"event_log"`
-	Info               struct {
-		AppName     string  `json:"app_name"`
-		ComposeHash string  `json:"compose_hash"`
-		OSImageHash string  `json:"os_image_hash"`
-		DeviceID    string  `json:"device_id"`
-		TCBInfo     tcbInfo `json:"tcb_info"`
-	} `json:"info"`
+	ModelName          string                      `json:"model_name,omitempty"`
+	IntelQuote         string                      `json:"intel_quote,omitempty"`
+	NvidiaPayload      string                      `json:"nvidia_payload,omitempty"`
+	SigningPublicKey   string                      `json:"signing_public_key,omitempty"`
+	SigningAddress     string                      `json:"signing_address,omitempty"`
+	SigningAlgo        string                      `json:"signing_algo,omitempty"`
+	TLSCertFingerprint string                      `json:"tls_cert_fingerprint,omitempty"`
+	RequestNonce       string                      `json:"request_nonce,omitempty"`
+	Verified           bool                        `json:"verified,omitempty"`
+	EventLog           []attestation.EventLogEntry `json:"event_log,omitempty"`
+	Info               *modelInfo                  `json:"info,omitempty"`
+
+	// Current inference-proxy responses can include deployment and OHTTP
+	// attestations. This path does not use the compose-manager attestation.
+	ComposeManagerAttestation *composeManagerAttestation `json:"compose_manager_attestation,omitempty"`
+	OHTTPAttestation          *ohttpAttestation          `json:"ohttp_attestation,omitempty"`
+	OHTTPKeyConfig            string                     `json:"ohttp_key_config,omitempty"`
+
+	// NearCloud adds these fields around the model_attestations array. Its
+	// parser performs the gateway attestation checks.
+	GatewayAttestation map[string]any `json:"gateway_attestation,omitempty"`
+	TLSCertificate     string         `json:"tls_certificate,omitempty"`
 }
 
 // Attester fetches attestation data from NEAR AI's /v1/attestation/report
@@ -195,6 +227,9 @@ func ParseAttestationResponse(_ context.Context, body []byte, model string) (*at
 	if len(ar.ModelAttestations) > maxAttestationEntries {
 		return nil, fmt.Errorf("nearai: model_attestations has %d entries, max %d", len(ar.ModelAttestations), maxAttestationEntries)
 	}
+	if ar.ComposeManagerAttestation != nil && len(ar.ComposeManagerAttestation.Actions) > maxComposeManagerActions {
+		return nil, fmt.Errorf("nearai: compose_manager_attestation actions has %d entries, max %d", len(ar.ComposeManagerAttestation.Actions), maxComposeManagerActions)
+	}
 
 	if len(ar.AllAttestations) > 0 {
 		selected, err := selectByModel(ar.AllAttestations, model)
@@ -221,6 +256,10 @@ func ParseAttestationResponse(_ context.Context, body []byte, model string) (*at
 	}
 
 	// Flat response form: use top-level fields directly.
+	var info modelInfo
+	if ar.Info != nil {
+		info = *ar.Info
+	}
 	raw := &attestation.RawAttestation{
 		BackendFormat:  attestation.FormatNear,
 		Verified:       ar.Verified,
@@ -233,11 +272,11 @@ func ParseAttestationResponse(_ context.Context, body []byte, model string) (*at
 		TLSFingerprint: ar.TLSCertFingerprint,
 		IntelQuote:     ar.IntelQuote,
 		NvidiaPayload:  ar.NvidiaPayload,
-		AppCompose:     ar.Info.TCBInfo.AppCompose,
-		AppName:        ar.Info.AppName,
-		ComposeHash:    ar.Info.ComposeHash,
-		OSImageHash:    ar.Info.OSImageHash,
-		DeviceID:       ar.Info.DeviceID,
+		AppCompose:     info.TCBInfo.AppCompose,
+		AppName:        info.AppName,
+		ComposeHash:    info.ComposeHash,
+		OSImageHash:    info.OSImageHash,
+		DeviceID:       info.DeviceID,
 		EventLog:       ar.EventLog,
 		EventLogCount:  len(ar.EventLog),
 		UnknownFields:  unknown,

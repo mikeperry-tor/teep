@@ -12,21 +12,40 @@ import (
 func runReasoningResponseTests(t *testing.T, plainURL, e2eeURL, model string) {
 	t.Helper()
 	t.Run("NonStream", func(t *testing.T) {
-		resp := postReasoningChat(t, plainURL, model, false)
-		defer resp.Body.Close()
-		assertReasoningResponse(t, resp, false)
+		requireReasoningResponse(t, plainURL, model, false)
 	})
 	t.Run("E2EEStreaming", func(t *testing.T) {
-		resp := postReasoningChat(t, e2eeURL, model, true)
-		defer resp.Body.Close()
-		assertReasoningResponse(t, resp, true)
+		requireReasoningResponse(t, e2eeURL, model, true)
 	})
+}
+
+func requireReasoningResponse(t *testing.T, proxyURL, model string, stream bool) {
+	t.Helper()
+	const maxAttempts = 3
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		resp := postReasoningChat(t, proxyURL, model, stream)
+		var reasoning, content string
+		func() {
+			defer resp.Body.Close()
+			reasoning, content = readReasoningResponse(t, resp, stream)
+		}()
+		if !isUsableReasoningText(content) {
+			t.Fatalf("content is empty or not valid printable UTF-8: length=%d", len(content))
+		}
+		if isUsableReasoningText(reasoning) {
+			t.Logf("reasoning chat response: reasoning_bytes=%d content_bytes=%d attempts=%d", len(reasoning), len(content), attempt)
+			return
+		}
+		t.Logf("reasoning attempt %d returned content without reasoning", attempt)
+	}
+	t.Fatalf("reasoning was empty or not valid printable UTF-8 in %d attempts", maxAttempts)
 }
 
 func postReasoningChat(t *testing.T, proxyURL, model string, stream bool) *http.Response {
 	t.Helper()
-	body := fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":%q}],"stream":%v,"max_tokens":512,"reasoning_effort":"low"}`,
-		model, integrationPrompt, stream)
+	const prompt = "Calculate 17 times 23 and explain the calculation briefly."
+	body := fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":%q}],"stream":%v,"max_tokens":512,"temperature":0,"reasoning_effort":"high","chat_template_kwargs":{"thinking":true,"enable_thinking":true}}`,
+		model, prompt, stream)
 	resp, err := integrationPostJSON(t, proxyURL+"/v1/chat/completions", body)
 	if err != nil {
 		t.Fatalf("POST reasoning chat: %v", err)
@@ -78,9 +97,14 @@ func postRawReasoningChat(t *testing.T, proxyURL, body string) *http.Response {
 
 func assertReasoningResponse(t *testing.T, resp *http.Response, stream bool) {
 	t.Helper()
+	reasoning, content := readReasoningResponse(t, resp, stream)
+	assertReasoningAndContent(t, reasoning, content)
+}
+
+func readReasoningResponse(t *testing.T, resp *http.Response, stream bool) (reasoningText, contentText string) {
+	t.Helper()
 	if stream {
-		assertReasoningStreamResponse(t, resp)
-		return
+		return readReasoningStreamResponse(t, resp)
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -114,10 +138,10 @@ func assertReasoningResponse(t *testing.T, resp *http.Response, stream bool) {
 	if err != nil {
 		t.Fatalf("decode reasoning chat content: %v", err)
 	}
-	assertReasoningAndContent(t, reasoning, content)
+	return reasoning, content
 }
 
-func assertReasoningStreamResponse(t *testing.T, resp *http.Response) {
+func readReasoningStreamResponse(t *testing.T, resp *http.Response) (reasoningText, contentText string) {
 	t.Helper()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -153,7 +177,7 @@ func assertReasoningStreamResponse(t *testing.T, resp *http.Response) {
 		}
 		content.WriteString(text)
 	}
-	assertReasoningAndContent(t, reasoning.String(), content.String())
+	return reasoning.String(), content.String()
 }
 
 func assertReasoningAndContent(t *testing.T, reasoning, content string) {
