@@ -34,10 +34,15 @@ func nearDirectIntegrationModel() string {
 		}
 		return "neardirect:" + m
 	}
-	return "neardirect:Qwen/Qwen3.5-122B-A10B"
+	return "neardirect:z-ai/glm-5.3-flash"
 }
 
 func TestNearDirectIntegrationModel_PrefixHandling(t *testing.T) {
+	t.Setenv("NEARAI_E2EE_MODEL", "")
+	if got, want := nearDirectIntegrationModel(), "neardirect:z-ai/glm-5.3-flash"; got != want {
+		t.Fatalf("nearDirectIntegrationModel() = %q, want %q", got, want)
+	}
+
 	t.Setenv("NEARAI_E2EE_MODEL", "Qwen/Qwen3.5-122B-A10B")
 	if got, want := nearDirectIntegrationModel(), "neardirect:Qwen/Qwen3.5-122B-A10B"; got != want {
 		t.Fatalf("nearDirectIntegrationModel() = %q, want %q", got, want)
@@ -123,7 +128,7 @@ func runNearDirectGLMReasoning(t *testing.T) {
 	e2eeSrv := newProxyServer(t, integrationNearDirectE2EEConfig(t))
 	defer e2eeSrv.Close()
 
-	const model = "neardirect:z-ai/glm-5.2"
+	const model = "neardirect:z-ai/glm-5.3-flash"
 	runReasoningResponseTests(t, plainSrv.URL, e2eeSrv.URL, model)
 	t.Run("Repairs", func(t *testing.T) {
 		runGLMReasoningRepairTests(t, e2eeSrv.URL, model)
@@ -370,7 +375,8 @@ func runNearDirectE2EEStreamingMultimodalContentArray(t *testing.T) {
 			]
 		}],
 		"stream": true,
-		"max_tokens": 50
+		"max_tokens": 50,
+		"reasoning_effort": "none"
 	}`, model, testPNG())
 
 	resp, err := integrationPostJSON(t, proxySrv.URL+"/v1/chat/completions", body)
@@ -397,7 +403,8 @@ func runNearDirectE2EENonStreamMultimodalContentArray(t *testing.T) {
 			]
 		}],
 		"stream": false,
-		"max_tokens": 50
+		"max_tokens": 50,
+		"reasoning_effort": "none"
 	}`, model, testPNG())
 
 	resp, err := integrationPostJSON(t, proxySrv.URL+"/v1/chat/completions", body)

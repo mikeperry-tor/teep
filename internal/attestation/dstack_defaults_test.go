@@ -21,8 +21,8 @@ func TestDstackMRSEAMAllow(t *testing.T) {
 }
 
 func TestDstackMRTDAllow(t *testing.T) {
-	if len(dstackMRTDAllow) != 2 {
-		t.Errorf("dstackMRTDAllow has %d entries, want 2", len(dstackMRTDAllow))
+	if len(dstackMRTDAllow) != 3 {
+		t.Errorf("dstackMRTDAllow has %d entries, want 3", len(dstackMRTDAllow))
 	}
 	for h := range dstackMRTDAllow {
 		b, err := hex.DecodeString(h)

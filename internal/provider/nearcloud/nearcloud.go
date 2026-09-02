@@ -33,6 +33,7 @@ const (
 	// maxGatewayEventLogEntries bounds gateway event log entries to avoid
 	// memory amplification from oversized attestation responses.
 	maxGatewayEventLogEntries = 10_000
+	maxModelAttestations      = 256
 )
 
 // GatewayHost returns the fixed host used for SPKI cache keying and pinned
@@ -43,8 +44,16 @@ func GatewayHost() string { return gatewayHost }
 // attestation endpoint. It wraps the standard neardirect model_attestations
 // with an additional gateway_attestation section.
 type gatewayResponse struct {
-	GatewayAttestation gatewayAttestation `json:"gateway_attestation"`
+	GatewayAttestation gatewayAttestation  `json:"gateway_attestation"`
+	ModelAttestations  []ignoredJSONObject `json:"model_attestations,omitempty"`
+	TLSCertificate     string              `json:"tls_certificate,omitempty"`
+	OHTTPAttestation   *ignoredJSONObject  `json:"ohttp_attestation,omitempty"`
+	OHTTPKeyConfig     string              `json:"ohttp_key_config,omitempty"`
 }
+
+// ignoredJSONObject recognizes an object without allocating maps for fields
+// that the shared model-attestation parser validates in a separate pass.
+type ignoredJSONObject struct{}
 
 // tcbInfo holds the parsed info.tcb_info object from the gateway attestation.
 type tcbInfo struct {
@@ -88,6 +97,9 @@ func ParseGatewayResponse(ctx context.Context, body []byte, model string) (*Gate
 	unknown, missing, err := jsonstrict.UnmarshalWarn(body, &gr, "nearcloud gateway")
 	if err != nil {
 		return nil, nil, fmt.Errorf("nearcloud: unmarshal gateway response: %w", err)
+	}
+	if len(gr.ModelAttestations) > maxModelAttestations {
+		return nil, nil, fmt.Errorf("nearcloud: model_attestations has %d entries, max %d", len(gr.ModelAttestations), maxModelAttestations)
 	}
 
 	// GW-M-01: Reject a missing or empty gateway_attestation section early so

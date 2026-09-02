@@ -33,10 +33,15 @@ func nearCloudIntegrationModel() string {
 		}
 		return "nearcloud:" + m
 	}
-	return "nearcloud:Qwen/Qwen3.5-122B-A10B"
+	return "nearcloud:z-ai/glm-5.3-flash"
 }
 
 func TestNearCloudIntegrationModel_PrefixHandling(t *testing.T) {
+	t.Setenv("NEARAI_E2EE_MODEL", "")
+	if got, want := nearCloudIntegrationModel(), "nearcloud:z-ai/glm-5.3-flash"; got != want {
+		t.Fatalf("nearCloudIntegrationModel() = %q, want %q", got, want)
+	}
+
 	t.Setenv("NEARAI_E2EE_MODEL", "Qwen/Qwen3.5-122B-A10B")
 	if got, want := nearCloudIntegrationModel(), "nearcloud:Qwen/Qwen3.5-122B-A10B"; got != want {
 		t.Fatalf("nearCloudIntegrationModel() = %q, want %q", got, want)
@@ -89,6 +94,17 @@ func integrationNearCloudE2EEConfig(t *testing.T) *config.Config {
 	}
 }
 
+func postNearCloudContentChat(t *testing.T, proxyURL, model string, stream bool) *http.Response {
+	t.Helper()
+	body := fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":%q}],"stream":%v,"max_tokens":64,"reasoning_effort":"none"}`,
+		model, integrationPrompt, stream)
+	resp, err := integrationPostJSON(t, proxyURL+"/v1/chat/completions", body)
+	if err != nil {
+		t.Fatalf("POST NearCloud content chat: %v", err)
+	}
+	return resp
+}
+
 func TestIntegration_NearCloud(t *testing.T) {
 	skipNearCloudIntegration(t)
 
@@ -111,7 +127,7 @@ func runNearCloudGLMReasoning(t *testing.T) {
 	e2eeSrv := newProxyServer(t, integrationNearCloudE2EEConfig(t))
 	defer e2eeSrv.Close()
 
-	const model = "nearcloud:z-ai/glm-5.2"
+	const model = "nearcloud:z-ai/glm-5.3-flash"
 	runReasoningResponseTests(t, plainSrv.URL, e2eeSrv.URL, model)
 	t.Run("Repairs", func(t *testing.T) {
 		runGLMReasoningRepairTests(t, e2eeSrv.URL, model)
@@ -122,7 +138,7 @@ func runNearCloudNonStream(t *testing.T) {
 	proxySrv := newProxyServer(t, integrationNearCloudConfig(t))
 	defer proxySrv.Close()
 
-	resp := postChatIntegration(t, proxySrv.URL, nearCloudIntegrationModel(), false)
+	resp := postNearCloudContentChat(t, proxySrv.URL, nearCloudIntegrationModel(), false)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -145,7 +161,7 @@ func runNearCloudStreaming(t *testing.T) {
 	proxySrv := newProxyServer(t, integrationNearCloudConfig(t))
 	defer proxySrv.Close()
 
-	resp := postChatIntegration(t, proxySrv.URL, nearCloudIntegrationModel(), true)
+	resp := postNearCloudContentChat(t, proxySrv.URL, nearCloudIntegrationModel(), true)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
@@ -215,7 +231,7 @@ func runNearCloudModels(t *testing.T) {
 func runNearCloudE2EEStreaming(t *testing.T) {
 	proxySrv := newProxyServer(t, integrationNearCloudE2EEConfig(t))
 	defer proxySrv.Close()
-	resp := postChatIntegration(t, proxySrv.URL, nearCloudIntegrationModel(), true)
+	resp := postNearCloudContentChat(t, proxySrv.URL, nearCloudIntegrationModel(), true)
 	defer resp.Body.Close()
 	assertStreamResponse(t, resp)
 }
@@ -224,7 +240,7 @@ func runNearCloudE2EENonStream(t *testing.T) {
 	proxySrv := newProxyServer(t, integrationNearCloudE2EEConfig(t))
 	defer proxySrv.Close()
 
-	resp := postChatIntegration(t, proxySrv.URL, nearCloudIntegrationModel(), false)
+	resp := postNearCloudContentChat(t, proxySrv.URL, nearCloudIntegrationModel(), false)
 	defer resp.Body.Close()
 	assertNonStreamResponse(t, resp)
 }
@@ -243,7 +259,7 @@ func runNearCloudAttestationReport(t *testing.T) {
 	_, upstreamModel, _ := strings.Cut(model, ":")
 
 	// First chat request triggers attestation + E2EE and populates the report cache.
-	chatResp := postChatIntegration(t, proxySrv.URL, model, false)
+	chatResp := postNearCloudContentChat(t, proxySrv.URL, model, false)
 	io.Copy(io.Discard, chatResp.Body)
 	chatResp.Body.Close()
 
@@ -377,7 +393,8 @@ func runNearCloudE2EEStreamingMultimodalContentArray(t *testing.T) {
 			]
 		}],
 		"stream": true,
-		"max_tokens": 50
+		"max_tokens": 50,
+		"reasoning_effort": "none"
 	}`, model, testPNG())
 
 	resp, err := integrationPostJSON(t, proxySrv.URL+"/v1/chat/completions", body)
@@ -404,7 +421,8 @@ func runNearCloudE2EENonStreamMultimodalContentArray(t *testing.T) {
 			]
 		}],
 		"stream": false,
-		"max_tokens": 50
+		"max_tokens": 50,
+		"reasoning_effort": "none"
 	}`, model, testPNG())
 
 	resp, err := integrationPostJSON(t, proxySrv.URL+"/v1/chat/completions", body)
@@ -493,10 +511,15 @@ func nearCloudVLModel() string {
 		}
 		return "nearcloud:" + m
 	}
-	return "nearcloud:Qwen/Qwen3-VL-30B-A3B-Instruct"
+	return "nearcloud:z-ai/glm-5.3-flash"
 }
 
 func TestNearCloudVLModel_PrefixHandling(t *testing.T) {
+	t.Setenv("NEARAI_VL_MODEL", "")
+	if got, want := nearCloudVLModel(), "nearcloud:z-ai/glm-5.3-flash"; got != want {
+		t.Fatalf("nearCloudVLModel() = %q, want %q", got, want)
+	}
+
 	t.Setenv("NEARAI_VL_MODEL", "Qwen/Qwen3-VL-30B-A3B-Instruct")
 	if got, want := nearCloudVLModel(), "nearcloud:Qwen/Qwen3-VL-30B-A3B-Instruct"; got != want {
 		t.Fatalf("nearCloudVLModel() = %q, want %q", got, want)
@@ -532,7 +555,8 @@ func TestIntegration_NearCloud_VL(t *testing.T) {
 				]
 			}],
 			"stream": true,
-			"max_tokens": 50
+			"max_tokens": 50,
+			"reasoning_effort": "none"
 		}`, model, testPNG())
 
 		resp, err := integrationPostJSON(t, proxySrv.URL+"/v1/chat/completions", body)

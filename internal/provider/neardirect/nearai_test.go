@@ -81,6 +81,44 @@ func TestAttester_FetchAttestation_ArrayResponse_ExactMatch(t *testing.T) {
 	}
 }
 
+func TestParseAttestationResponse_CurrentDirectSchema(t *testing.T) {
+	const body = `{
+		"model_name":"z-ai/glm-5.3-flash",
+		"intel_quote":"quote",
+		"nvidia_payload":"payload",
+		"signing_public_key":"key",
+		"signing_address":"address",
+		"signing_algo":"ed25519",
+		"tls_cert_fingerprint":"fingerprint",
+		"request_nonce":"nonce",
+		"event_log":[],
+		"info":{"app_name":"app","compose_hash":"compose","os_image_hash":"image","device_id":"device","tcb_info":{"app_compose":"services: {}"}},
+		"all_attestations":[{
+			"model_name":"z-ai/glm-5.3-flash",
+			"intel_quote":"quote",
+			"nvidia_payload":"payload",
+			"signing_public_key":"key",
+			"signing_address":"address",
+			"signing_algo":"ed25519",
+			"tls_cert_fingerprint":"fingerprint",
+			"request_nonce":"nonce",
+			"event_log":[],
+			"info":{"app_name":"app","compose_hash":"compose","os_image_hash":"image","device_id":"device","tcb_info":{"app_compose":"services: {}"}}
+		}],
+		"compose_manager_attestation":{"actions":[],"actions_hash":"hash","nonce":"nonce","nonce_source":"client","quote":"quote","event_log":"[]","report_data":"data","vm_config":"config"},
+		"ohttp_key_config":"config",
+		"ohttp_attestation":{"signing_algo":"ed25519","signing_key":"key","key_config":"config","signature":"signature"}
+	}`
+
+	raw, err := neardirect.ParseAttestationResponse(t.Context(), []byte(body), "z-ai/glm-5.3-flash")
+	if err != nil {
+		t.Fatalf("ParseAttestationResponse: %v", err)
+	}
+	if len(raw.UnknownFields) != 0 || len(raw.MissingFields) != 0 {
+		t.Fatalf("schema fields: unknown=%v missing=%v", raw.UnknownFields, raw.MissingFields)
+	}
+}
+
 func TestAttester_FetchAttestation_ArrayResponse_NoMatch(t *testing.T) {
 	// Array response, but we request a model not in the list.
 	// Should return an error instead of silently falling back.

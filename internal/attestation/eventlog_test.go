@@ -3,6 +3,7 @@ package attestation
 import (
 	"crypto/sha512"
 	"encoding/hex"
+	"strings"
 	"testing"
 )
 
@@ -138,5 +139,53 @@ func TestReplayEventLog_ShortDigestPadded(t *testing.T) {
 	if hex.EncodeToString(rtmrs[2][:]) != hex.EncodeToString(expected) {
 		t.Errorf("RTMR[2] mismatch with short digest:\n  got  %s\n  want %s",
 			hex.EncodeToString(rtmrs[2][:]), hex.EncodeToString(expected))
+	}
+}
+
+func TestReplayEventLog_DstackRuntimeEvent(t *testing.T) {
+	entries := []EventLogEntry{{
+		IMR:          3,
+		EventType:    dstackRuntimeEventType,
+		Event:        "app-id",
+		EventPayload: "2c0a0c96cb6dbd659bf1446e2f3fce58172ff91b",
+	}}
+
+	rtmrs, err := ReplayEventLog(entries)
+	if err != nil {
+		t.Fatalf("ReplayEventLog: %v", err)
+	}
+	want := "056e55b5d02d85a274cd667ed4ce9b1a2fd749609f2830fad8fb6902fbab2832e86e3546899adb562f171f6f2b85bc13"
+	if got := hex.EncodeToString(rtmrs[3][:]); got != want {
+		t.Errorf("RTMR3 = %s, want %s", got, want)
+	}
+}
+
+func TestReplayEventLog_DstackRuntimeEventStoredDigest(t *testing.T) {
+	entry := EventLogEntry{
+		IMR:          3,
+		EventType:    dstackRuntimeEventType,
+		Event:        "app-id",
+		EventPayload: "2c0a0c96cb6dbd659bf1446e2f3fce58172ff91b",
+		Digest:       "5c149c8719975dc6285de58d94db7e6a75c46e796c319b751db8ee14e6748b6c2638d13cf12f54396e08299944766537",
+	}
+	if _, err := ReplayEventLog([]EventLogEntry{entry}); err != nil {
+		t.Fatalf("ReplayEventLog with matching stored digest: %v", err)
+	}
+
+	entry.Digest = strings.Repeat("00", 48)
+	if _, err := ReplayEventLog([]EventLogEntry{entry}); err == nil {
+		t.Fatal("ReplayEventLog accepted a runtime event digest that did not match its payload")
+	}
+}
+
+func TestReplayEventLog_DstackRuntimeEventInvalidPayload(t *testing.T) {
+	entries := []EventLogEntry{{
+		IMR:          3,
+		EventType:    dstackRuntimeEventType,
+		Event:        "app-id",
+		EventPayload: "not-hex",
+	}}
+	if _, err := ReplayEventLog(entries); err == nil {
+		t.Fatal("ReplayEventLog accepted an invalid runtime event payload")
 	}
 }
