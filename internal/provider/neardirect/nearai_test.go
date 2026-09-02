@@ -554,6 +554,25 @@ func TestParseAttestationResponse_TooManyModelAttestations(t *testing.T) {
 	}
 }
 
+func TestParseAttestationResponse_TooManyComposeManagerActions(t *testing.T) {
+	var sb strings.Builder
+	for i := range 10_001 {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(`{}`)
+	}
+	body := fmt.Sprintf(`{"compose_manager_attestation":{"actions":[%s]}}`, sb.String())
+
+	_, err := neardirect.ParseAttestationResponse(context.Background(), []byte(body), "model")
+	if err == nil {
+		t.Fatal("expected error for too many compose-manager actions")
+	}
+	if !strings.Contains(err.Error(), "compose_manager_attestation actions") {
+		t.Errorf("error = %q, want message containing 'compose_manager_attestation actions'", err)
+	}
+}
+
 // mockResolver implements neardirect.DomainResolver for testing.
 type mockResolver struct {
 	domain string

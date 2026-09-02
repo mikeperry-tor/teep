@@ -192,6 +192,25 @@ func TestParseGatewayResponse_EventLogTooManyEntries(t *testing.T) {
 	}
 }
 
+func TestParseGatewayResponse_TooManyModelAttestations(t *testing.T) {
+	var sb strings.Builder
+	for i := range 257 {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(`{}`)
+	}
+	body := fmt.Appendf(nil, `{"gateway_attestation":{},"model_attestations":[%s]}`, sb.String())
+
+	_, _, err := nearcloud.ParseGatewayResponse(context.Background(), body, "model")
+	if err == nil {
+		t.Fatal("expected error for too many model attestations")
+	}
+	if !strings.Contains(err.Error(), "model_attestations") {
+		t.Errorf("error = %q, want message containing 'model_attestations'", err)
+	}
+}
+
 func TestParseGatewayResponse_MalformedJSON(t *testing.T) {
 	_, _, err := nearcloud.ParseGatewayResponse(context.Background(), []byte(`{{{`), "m")
 	t.Logf("error: %v", err)
