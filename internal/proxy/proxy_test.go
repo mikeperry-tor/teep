@@ -984,7 +984,7 @@ func TestNonChat_PinnedOK_ForwardsUpstreamHeaders(t *testing.T) {
 				t.Fatalf("status = %d, want 200; body=%s", resp.StatusCode, body)
 			}
 
-			if got := resp.Header.Get("X-Request-Id"); got != "req-abc-123" {
+			if got := resp.Header.Get("X-Request-ID"); got != "req-abc-123" {
 				t.Errorf("X-Request-Id = %q, want %q", got, "req-abc-123")
 			}
 			if got := resp.Header.Get("X-Ratelimit-Remaining"); got != "42" {

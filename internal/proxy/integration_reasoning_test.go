@@ -101,7 +101,7 @@ func assertReasoningResponse(t *testing.T, resp *http.Response, stream bool) {
 	assertReasoningAndContent(t, reasoning, content)
 }
 
-func readReasoningResponse(t *testing.T, resp *http.Response, stream bool) (string, string) {
+func readReasoningResponse(t *testing.T, resp *http.Response, stream bool) (reasoningText, contentText string) {
 	t.Helper()
 	if stream {
 		return readReasoningStreamResponse(t, resp)
@@ -141,7 +141,7 @@ func readReasoningResponse(t *testing.T, resp *http.Response, stream bool) (stri
 	return reasoning, content
 }
 
-func readReasoningStreamResponse(t *testing.T, resp *http.Response) (string, string) {
+func readReasoningStreamResponse(t *testing.T, resp *http.Response) (reasoningText, contentText string) {
 	t.Helper()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
