@@ -378,7 +378,41 @@ func NewPreparer(apiKey string) *Preparer {
 }
 
 // PrepareRequest injects the NEAR AI Authorization header into req.
-func (p *Preparer) PrepareRequest(req *http.Request, _ http.Header, _ *e2ee.ChutesE2EE, _ bool, _ string) error {
+func (p *Preparer) PrepareRequest(req *http.Request, headers http.Header, _ *e2ee.ChutesE2EE, _ bool, _ string) error {
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	if len(headers) == 0 {
+		return nil
+	}
+	names := []string{"X-Signing-Algo", "X-Client-Pub-Key", "X-Encryption-Version", "X-Encrypt-All-Fields"}
+	for _, name := range names {
+		if len(headers.Values(name)) != 1 || headers.Get(name) == "" {
+			return fmt.Errorf("incomplete NEAR E2EE headers: %s", name)
+		}
+	}
+	if headers.Get("X-Signing-Algo") != "ed25519" || headers.Get("X-Encryption-Version") != "2" || headers.Get("X-Encrypt-All-Fields") != "true" {
+		return errors.New("invalid NEAR E2EE protocol headers")
+	}
+	for _, name := range names {
+		req.Header.Set(name, headers.Get(name))
+	}
 	return nil
+}
+
+// ResolveRoute selects the same origin that a standalone attestation will use.
+func (a *Attester) ResolveRoute(ctx context.Context, model string) (provider.ResolvedRoute, error) {
+	base, err := url.Parse(a.baseURL)
+	if err != nil {
+		return provider.ResolvedRoute{}, err
+	}
+	if shouldResolveModelDomain(base.Hostname()) {
+		if a.resolver == nil {
+			return provider.ResolvedRoute{}, errors.New("missing NEAR route resolver")
+		}
+		domain, err := a.resolver.Resolve(ctx, model)
+		if err != nil {
+			return provider.ResolvedRoute{}, err
+		}
+		return provider.NewResolvedRoute("https://"+domain, "")
+	}
+	return provider.NewResolvedRoute(a.baseURL, "")
 }

@@ -676,3 +676,25 @@ func setServedFingerprint(value any, fp string) {
 		}
 	}
 }
+
+func TestPreparerPreservesCompleteE2EEHeaders(t *testing.T) {
+	headers := http.Header{"X-Signing-Algo": {"ed25519"}, "X-Client-Pub-Key": {strings.Repeat("ab", 32)}, "X-Encryption-Version": {"2"}, "X-Encrypt-All-Fields": {"true"}, "X-Unrelated": {"ignored"}}
+	preparer := neardirect.NewPreparer("test-key")
+	request := httptest.NewRequest(http.MethodPost, "https://test.near.ai/v1/chat/completions", http.NoBody)
+	if err := preparer.PrepareRequest(request, headers, nil, true, "/v1/chat/completions"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"X-Signing-Algo", "X-Client-Pub-Key", "X-Encryption-Version", "X-Encrypt-All-Fields"} {
+		if request.Header.Get(name) != headers.Get(name) {
+			t.Errorf("missing %s", name)
+		}
+		incomplete := headers.Clone()
+		incomplete.Del(name)
+		if err := preparer.PrepareRequest(request, incomplete, nil, true, "/v1/chat/completions"); err == nil {
+			t.Errorf("accepted missing %s", name)
+		}
+	}
+	if request.Header.Get("X-Unrelated") != "" {
+		t.Fatal("copied unrelated header")
+	}
+}
