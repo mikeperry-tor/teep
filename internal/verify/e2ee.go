@@ -483,6 +483,9 @@ func verifyEHBPStreamResponse(resp *http.Response, session *e2ee.EHBPSession) *a
 		}
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
+			if err := e2ee.FinishSSE(scanner); err != nil {
+				return &attestation.E2EETestResult{Attempted: true, Err: fmt.Errorf("EHBP stream completion: %w", err)}
+			}
 			break
 		}
 		chunkCount++

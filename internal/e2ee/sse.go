@@ -2,9 +2,11 @@ package e2ee
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -20,6 +22,25 @@ var sseScannerBufPool = sync.Pool{
 		buf := make([]byte, sseScannerBufSize)
 		return &buf
 	},
+}
+
+// FinishSSE reads to EOF after the application end marker. Only bounded empty
+// lines and SSE comments may follow it. Reading through the scanner preserves
+// buffered bytes and propagates errors from an underlying authenticated reader.
+func FinishSSE(scanner *bufio.Scanner) error {
+	const maxTrailingBytes = 64 << 10
+	remaining := maxTrailingBytes
+	for scanner.Scan() {
+		line := scanner.Text()
+		remaining -= len(line) + 1
+		if remaining < 0 {
+			return errors.New("SSE data after end marker exceeds limit")
+		}
+		if line != "" && !strings.HasPrefix(line, ":") {
+			return errors.New("unexpected SSE data after end marker")
+		}
+	}
+	return scanner.Err()
 }
 
 // newSSEScanner creates a bufio.Scanner backed by a pooled 1 MiB buffer.

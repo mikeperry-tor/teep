@@ -1040,6 +1040,12 @@ func decryptResponseScoreData(dataRaw json.RawMessage, session Decryptor, endpoi
 	return decryptResponseDataArrayField(dataRaw, EncFieldScore, "parse data as score array", EncFieldScore, session, endpoint)
 }
 
+const (
+	maxNonStreamResponseBytes = 10 << 20
+	// NEAR hex encoding and SSE framing require more space than the final JSON.
+	maxReassemblyInputBytes = 32 << 20
+)
+
 // ReassembleNonStream reads an SSE stream (forced by E2EE), decrypts each
 // chunk, and reassembles the result into a single non-streaming OpenAI response.
 // Handles tool_calls and finish_reason from delta chunks. Returns the assembled
@@ -1047,6 +1053,21 @@ func decryptResponseScoreData(dataRaw json.RawMessage, session Decryptor, endpoi
 // The endpoint parameter identifies the proxy route kind (currently only EndpointChat is supported).
 // Actual provider paths: /v1/chat/completions (NearCloud) or /api/v1/chat/completions (Venice).
 func ReassembleNonStream(body io.Reader, session Decryptor, endpoint EndpointType) ([]byte, StreamStats, error) {
+	limited := &io.LimitedReader{R: body, N: maxReassemblyInputBytes + 1}
+	result, stats, err := reassembleNonStream(limited, session, endpoint)
+	if limited.N == 0 {
+		return nil, stats, errors.New("reassembly input exceeds 32 MiB")
+	}
+	if err != nil {
+		return nil, stats, err
+	}
+	if len(result) > maxNonStreamResponseBytes {
+		return nil, stats, errors.New("reassembled response exceeds 10 MiB")
+	}
+	return result, stats, nil
+}
+
+func reassembleNonStream(body io.Reader, session Decryptor, endpoint EndpointType) ([]byte, StreamStats, error) {
 	scanner, cleanup := newSSEScanner(body)
 	defer cleanup()
 
@@ -1064,6 +1085,9 @@ func ReassembleNonStream(body io.Reader, session Decryptor, endpoint EndpointTyp
 		}
 		data := line[len("data: "):]
 		if data == "[DONE]" {
+			if err := FinishSSE(scanner); err != nil {
+				return nil, stats, fmt.Errorf("reassemble completion: %w", err)
+			}
 			break
 		}
 
@@ -1249,6 +1273,13 @@ func RelayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ses
 	var decryptErr error
 
 	process := func(line string) bool {
+		if line == "data: [DONE]" {
+			if err := FinishSSE(scanner); err != nil {
+				decryptErr = fmt.Errorf("%w: SSE completion: %w", ErrRelayFailed, err)
+				WriteSSEError(w, flusher, "stream completion failed")
+				return true
+			}
+		}
 		done, written, derr := relaySSELine(ctx, w, flusher, line, session, endpoint)
 		if derr != nil {
 			decryptErr = derr
@@ -1340,13 +1371,13 @@ func RelayReassembledNonStream(ctx context.Context, w http.ResponseWriter, body 
 // (chat, embeddings, images, etc.); actual provider paths are documented
 // in DecryptNonStreamResponseForEndpoint.
 func RelayNonStreamForEndpoint(ctx context.Context, w http.ResponseWriter, body io.Reader, session Decryptor, endpoint EndpointType) (StreamStats, error) {
-	responseBody, err := io.ReadAll(io.LimitReader(body, (10<<20)+1))
+	responseBody, err := io.ReadAll(io.LimitReader(body, maxNonStreamResponseBytes+1))
 	if err != nil {
 		http.Error(w, "failed to read upstream response", http.StatusBadGateway)
 		return StreamStats{}, fmt.Errorf("%w: %w", ErrRelayFailed, err)
 	}
 
-	if len(responseBody) > 10<<20 {
+	if len(responseBody) > maxNonStreamResponseBytes {
 		http.Error(w, "upstream response exceeds size limit", http.StatusBadGateway)
 		return StreamStats{}, fmt.Errorf("%w: upstream response exceeds 10 MiB", ErrRelayFailed)
 	}

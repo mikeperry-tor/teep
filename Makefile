@@ -73,7 +73,7 @@ integration-chutes-fixture: ## Run Chutes fixture integration test (no API key n
 	go test -v -race -timeout 60s -run TestIntegration_Chutes_Fixture ./internal/integration/
 
 integration-tinfoil: ## Run Tinfoil cloud integration tests (requires TINFOIL_API_KEY)
-	TEEP_TESTS_LOAD_DOTENV=1 go test -v -race -timeout 300s -run TestIntegration_Tinfoil$$ ./internal/proxy/
+	TEEP_TESTS_LOAD_DOTENV=1 go test -v -race -timeout 300s -run 'TestIntegration_Tinfoil($$|KeyRecovery)' ./internal/proxy/
 
 integration-tinfoil-direct: ## Run Tinfoil direct integration tests (requires TINFOIL_API_KEY)
 	TEEP_TESTS_LOAD_DOTENV=1 go test -v -race -timeout 300s -run TestIntegration_TinfoilDirect ./internal/proxy/
@@ -114,10 +114,10 @@ report-venice: build ## Verify Venice attestation (requires VENICE_API_KEY)
 	./teep verify venice --model e2ee-qwen3-5-122b-a10b --log-level debug --capture /tmp/teep-attestation-venice
 
 report-neardirect: build ## Verify NEAR Direct attestation (requires NEARAI_API_KEY)
-	./teep verify neardirect --model Qwen/Qwen3.5-122B-A10B --log-level debug --capture /tmp/teep-attestation-neardirect
+	./teep verify neardirect --model z-ai/glm-5.3-flash --log-level debug --capture /tmp/teep-attestation-neardirect
 
 report-nearcloud: build ## Verify NearCloud gateway attestation (requires NEARAI_API_KEY)
-	./teep verify nearcloud --model Qwen/Qwen3.5-122B-A10B --log-level debug --capture /tmp/teep-attestation-nearcloud
+	./teep verify nearcloud --model z-ai/glm-5.3-flash --log-level debug --capture /tmp/teep-attestation-nearcloud
 
 report-nanogpt: build ## Verify NanoGPT attestation (requires NANOGPT_API_KEY)
 	./teep verify nanogpt --model TEE/gemma-3-27b-it --log-level debug --capture /tmp/teep-attestation-nanogpt
