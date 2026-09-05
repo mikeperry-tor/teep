@@ -313,14 +313,22 @@ func verifyE2EEStreamResponse(resp *http.Response, session e2ee.Decryptor, versi
 	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
 	encryptedCount := 0
 	chunkCount := 0
+	seenDone := false
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if err := e2ee.CheckSSEEvent(line); err != nil {
+			return &attestation.E2EETestResult{Attempted: true, Err: err}
+		}
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
+			if err := e2ee.FinishSSE(scanner); err != nil {
+				return &attestation.E2EETestResult{Attempted: true, Err: fmt.Errorf("SSE completion: %w", err)}
+			}
+			seenDone = true
 			break
 		}
 		chunkCount++
@@ -336,13 +344,17 @@ func verifyE2EEStreamResponse(resp *http.Response, session e2ee.Decryptor, versi
 				Delta        any `json:"delta,omitempty"`
 				FinishReason any `json:"finish_reason,omitempty"`
 			} `json:"choices,omitempty"`
-			Usage any `json:"usage,omitempty"`
+			Error json.RawMessage `json:"error,omitempty"`
+			Usage any             `json:"usage,omitempty"`
 		}
 		if _, _, err := jsonstrict.UnmarshalWarn([]byte(data), &chunk, "e2ee SSE chunk"); err != nil {
 			return &attestation.E2EETestResult{
 				Attempted: true,
 				Err:       fmt.Errorf("parse SSE chunk %d: %w", chunkCount, err),
 			}
+		}
+		if len(chunk.Error) != 0 {
+			return &attestation.E2EETestResult{Attempted: true, Err: errors.New("upstream SSE error event")}
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -370,6 +382,10 @@ func verifyE2EEStreamResponse(resp *http.Response, session e2ee.Decryptor, versi
 	}
 	if err := scanner.Err(); err != nil {
 		return &attestation.E2EETestResult{Attempted: true, Err: fmt.Errorf("read SSE stream: %w", err)}
+	}
+
+	if err := e2ee.CheckSSEEndMarker(session, chatCompletionsEndpoint, seenDone); err != nil {
+		return &attestation.E2EETestResult{Attempted: true, Err: err}
 	}
 
 	if encryptedCount == 0 {
@@ -483,6 +499,9 @@ func verifyEHBPStreamResponse(resp *http.Response, session *e2ee.EHBPSession) *a
 		}
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
+			if err := e2ee.FinishSSE(scanner); err != nil {
+				return &attestation.E2EETestResult{Attempted: true, Err: fmt.Errorf("EHBP stream completion: %w", err)}
+			}
 			break
 		}
 		chunkCount++
