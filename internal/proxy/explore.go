@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/13rac1/teep/internal/attestation"
+	"github.com/13rac1/teep/internal/e2ee"
 	"github.com/13rac1/teep/internal/jsonstrict"
 	"github.com/13rac1/teep/internal/reqid"
 )
@@ -93,6 +94,28 @@ func (s *Server) handleExploreAttest(w http.ResponseWriter, r *http.Request) {
 	prov, upstreamModel, ok := s.resolveModel(req.Model)
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown model: %q", req.Model), http.StatusBadRequest)
+		return
+	}
+
+	if prov.UsesTLSBinding {
+		route, key, routeErr := resolveRequestRoute(ctx, prov, upstreamModel)
+		if routeErr != nil {
+			http.Error(w, "resolve route failed", http.StatusBadGateway)
+			return
+		}
+		value, blocked, loadErr := s.loadAuthorization(ctx, prov, route, key)
+		if loadErr != nil {
+			http.Error(w, "authorization failed", http.StatusBadGateway)
+			return
+		}
+		report := blocked
+		if value != nil {
+			report = value.report
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(report); err != nil {
+			slog.ErrorContext(ctx, "encode attest response", "err", err)
+		}
 		return
 	}
 
@@ -176,8 +199,24 @@ func (s *Server) loopbackInfer(ctx context.Context, model string, body []byte) e
 	}
 	inner.Header.Set("Content-Type", "application/json")
 
-	rec := httptest.NewRecorder()
-	s.ServeHTTP(rec, inner)
+	rec := newInferenceRecorder()
+	var usedReport *attestation.VerificationReport
+	var usedE2EE bool
+	if prov, upModel, ok := s.resolveModel(model); ok && prov.UsesTLSBinding {
+		route, key, routeErr := resolveRequestRoute(ctx, prov, upModel)
+		if routeErr != nil {
+			return exploreInferResponse{Model: model, Error: "resolve route failed"}
+		}
+		normalized, normalizeErr := rewriteModelInBody("application/json", body, "application/json", upModel)
+		if normalizeErr != nil {
+			return exploreInferResponse{Model: model, Error: "normalize request failed"}
+		}
+		outcome := s.handleAuthorizedEndpoint(ctx, rec, &authorizedRequest{provider: prov, route: route, key: key, body: normalized, path: prov.ChatPath, contentType: "application/json", endpoint: e2ee.EndpointChat})
+		usedReport = outcome.report
+		usedE2EE = prov.E2EE
+	} else {
+		s.ServeHTTP(rec, inner)
+	}
 
 	result := rec.Result()
 	defer result.Body.Close()
@@ -226,8 +265,8 @@ func (s *Server) loopbackInfer(ctx context.Context, model string, body []byte) e
 
 	// Check cached report for E2EE status. Apply CacheKeySuffix so the
 	// cache key matches the main proxy path (e.g. "model@domain").
-	var e2ee bool
-	if prov, upModel, ok := s.resolveModel(model); ok {
+	var encrypted bool
+	if prov, upModel, ok := s.resolveModel(model); ok && !prov.UsesTLSBinding {
 		lookupCtx := ctx
 		if prov.CacheKeySuffix != nil {
 			if suffix := prov.CacheKeySuffix(lookupCtx, upModel); suffix != "" {
@@ -236,13 +275,40 @@ func (s *Server) loopbackInfer(ctx context.Context, model string, body []byte) e
 		}
 		cacheKey := cacheModelFor(lookupCtx, upModel)
 		if report, cacheOK := s.cache.Get(prov.Name, cacheKey); cacheOK {
-			e2ee = prov.E2EE && report.ReportDataBindingPassed()
+			encrypted = prov.E2EE && report.ReportDataBindingPassed()
 		}
 	}
 
+	if usedReport != nil {
+		encrypted = usedE2EE && usedReport.ReportDataBindingPassed()
+	}
 	return exploreInferResponse{
+		Report:   usedReport,
 		Model:    model,
 		Response: responseText,
-		E2EE:     e2ee,
+		E2EE:     encrypted,
 	}
+}
+
+// inferenceRecorder collects the explore response in memory. Its writes never
+// wait for network capacity, but must still respect the attempt deadline.
+type inferenceRecorder struct {
+	*httptest.ResponseRecorder
+	deadline time.Time
+}
+
+func newInferenceRecorder() *inferenceRecorder {
+	return &inferenceRecorder{ResponseRecorder: httptest.NewRecorder()}
+}
+
+func (r *inferenceRecorder) SetWriteDeadline(deadline time.Time) error {
+	r.deadline = deadline
+	return nil
+}
+
+func (r *inferenceRecorder) Write(body []byte) (int, error) {
+	if !r.deadline.IsZero() && !time.Now().Before(r.deadline) {
+		return 0, context.DeadlineExceeded
+	}
+	return r.ResponseRecorder.Write(body)
 }

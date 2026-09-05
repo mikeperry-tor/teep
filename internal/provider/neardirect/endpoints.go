@@ -147,6 +147,14 @@ func (r *EndpointResolver) ResolveRoute(ctx context.Context, model string) (prov
 	return provider.NewResolvedRoute("https://"+domain, "")
 }
 
+// CloseIdleConnections releases idle discovery connections.
+func (r *EndpointResolver) CloseIdleConnections() {
+	r.mu.RLock()
+	client := r.client
+	r.mu.RUnlock()
+	client.CloseIdleConnections()
+}
+
 // refresh fetches the endpoint mapping from the discovery URL and replaces
 // the cached mapping. Holds the write lock only for the swap.
 func (r *EndpointResolver) refresh(ctx context.Context) error {

@@ -2,6 +2,7 @@ package verify
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/13rac1/teep/internal/capture"
 	"github.com/13rac1/teep/internal/config"
 	"github.com/13rac1/teep/internal/defaults"
+	"github.com/13rac1/teep/internal/provider"
 	"github.com/13rac1/teep/internal/tlsct"
 )
 
@@ -49,37 +51,58 @@ type CfgLoader func(providerName string) (*config.Config, *config.Provider, erro
 // client (used for replay). When opts.Nonce is non-zero, it replaces the
 // generated nonce.
 func Run(ctx context.Context, opts *Options) (report *attestation.VerificationReport, retErr error) {
+	local := *opts
+	if local.Client == nil {
+		local.Client = config.NewAttestationClient(local.Offline)
+		defer local.Client.CloseIdleConnections()
+	}
+	if nonceIsZero(local.Nonce) {
+		local.Nonce = attestation.NewNonce()
+	}
+	var result verificationOutcome
+	if local.CaptureDir != "" {
+		recorder := capture.WrapRecording(local.Client.Transport)
+		client := *local.Client
+		client.Transport = recorder
+		local.Client = &client
+		defer func() { retErr = saveCapture(ctx, opts, recorder, local.Nonce, result.e2ee, report, retErr) }()
+	}
+	route := provider.ResolvedRoute{}
+	if isTinfoilProvider(local.ProviderName) {
+		result, retErr = runTLSVerification(ctx, &local, &route)
+	} else {
+		result, retErr = runEvidence(ctx, &local, &route)
+	}
+	return result.report, retErr
+}
+
+type verificationOutcome struct {
+	report *attestation.VerificationReport
+	raw    *attestation.RawAttestation
+	e2ee   *attestation.E2EETestResult
+}
+
+func runEvidence(ctx context.Context, opts *Options, route *provider.ResolvedRoute) (out verificationOutcome, retErr error) {
+	var report *attestation.VerificationReport
 	cfg := opts.Config
 
 	attester, err := newAttester(opts.ProviderName, opts.Provider, opts.Offline)
 	if err != nil {
-		return nil, fmt.Errorf("attester init: %w", err)
+		return verificationOutcome{}, fmt.Errorf("attester init: %w", err)
 	}
 
 	client := opts.Client
 	if client == nil {
 		client = config.NewAttestationClient(opts.Offline)
+		defer client.CloseIdleConnections()
 	}
 
 	nonce := opts.Nonce
-	if nonce == (attestation.Nonce{}) {
+	if nonceIsZero(nonce) {
 		nonce = attestation.NewNonce()
 	}
 
-	// Wrap transport with recording when capturing. Shallow-copy the client so
-	// the caller's *http.Client is not mutated.
-	var recorder *capture.RecordingTransport
 	var e2eeResult *attestation.E2EETestResult
-	if opts.CaptureDir != "" {
-		recorder = capture.WrapRecording(client.Transport)
-		wrapped := *client
-		wrapped.Transport = recorder
-		client = &wrapped
-
-		defer func() {
-			retErr = saveCapture(ctx, opts, recorder, nonce, e2eeResult, report, retErr)
-		}()
-	}
 
 	// Build per-call verifiers so concurrent Run calls don't race on a global.
 	verifier := attestation.NewTDXVerifier(opts.Offline, attestation.NewCollateralGetter(client), opts.VerificationTime)
@@ -91,11 +114,18 @@ func Run(ctx context.Context, opts *Options) (report *attestation.VerificationRe
 		cs.SetClient(client)
 	}
 
+	if isTinfoilProvider(opts.ProviderName) {
+		attester, err = standaloneAttesterForRoute(ctx, opts, attester, route)
+		if err != nil {
+			return verificationOutcome{}, err
+		}
+	}
+
 	slog.Debug("nonce generated", "provider", opts.ProviderName, "model", opts.ModelName, "nonce", nonce.Hex()[:16]+"...")
 
 	raw, err := fetchAttestation(ctx, attester, opts.ProviderName, opts.ModelName, nonce)
 	if err != nil {
-		return nil, fmt.Errorf("fetch attestation: %w", err)
+		return verificationOutcome{}, fmt.Errorf("fetch attestation: %w", err)
 	}
 
 	tdxResult := verifyTDX(ctx, raw, nonce, opts.ProviderName, verifier)
@@ -132,18 +162,18 @@ func Run(ctx context.Context, opts *Options) (report *attestation.VerificationRe
 	allDigests, digestToRepo := attestation.MergeComposeDigests(modelCD, gatewayCD)
 	scPolicy, err := supplyChainPolicy(opts.ProviderName)
 	if err != nil {
-		return nil, fmt.Errorf("supply chain policy: %w", err)
+		return verificationOutcome{}, fmt.Errorf("supply chain policy: %w", err)
 	}
 	// SYNC: proxy.fromConfig validates the same way at config load, so a
 	// malformed policy fails before evaluation on both entry points.
 	if err := scPolicy.Validate(); err != nil {
-		return nil, fmt.Errorf("supply chain policy: %w", err)
+		return verificationOutcome{}, fmt.Errorf("supply chain policy: %w", err)
 	}
 	sigstoreResults, rekorResults := checkSigstore(ctx, allDigests, digestToRepo, scPolicy, client, opts.Offline)
 
 	if opts.CapturedE2EE != nil {
 		e2eeResult = opts.CapturedE2EE
-	} else {
+	} else if !isTinfoilProvider(opts.ProviderName) || opts.Offline || opts.Provider.APIKey == "" {
 		e2eeResult = testE2EE(ctx, raw, opts.ProviderName, opts.Provider, opts.ModelName, opts.Offline)
 	}
 	if e2eeResult != nil && e2eeResult.KeyType == "" {
@@ -186,12 +216,13 @@ func Run(ctx context.Context, opts *Options) (report *attestation.VerificationRe
 		GatewayEventLog:        raw.GatewayEventLog,
 		TinfoilSC:              tinfoilSC,
 		E2EETest:               e2eeResult,
+		E2EEConfigured:         isTinfoilProvider(opts.ProviderName) && opts.Provider.E2EE,
 		Inapplicable:           inapplicableFactors(opts.ProviderName),
 		ProviderUsesTLSBinding: providerUsesTLSBinding(opts.ProviderName),
 		E2EEKeyBoundByGateway:  providerE2EEKeyBoundByGateway(opts.ProviderName),
 	})
 
-	return report, nil
+	return verificationOutcome{report: report, raw: raw, e2ee: e2eeResult}, nil
 }
 
 // Replay loads a capture directory, replays all HTTP traffic, and returns the
@@ -485,4 +516,9 @@ func PrintReportDiff(a, b string) {
 			}
 		}
 	}
+}
+
+func nonceIsZero(nonce attestation.Nonce) bool {
+	var zero attestation.Nonce
+	return subtle.ConstantTimeCompare(nonce[:], zero[:]) == 1
 }
