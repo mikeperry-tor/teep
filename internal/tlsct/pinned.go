@@ -95,15 +95,7 @@ func validateSystemWebPKITransport(base *http.Transport) error {
 // SPKIFingerprintsEqual compares two hex-encoded SHA-256 SPKI fingerprints in
 // constant time. Malformed fingerprints never match.
 func SPKIFingerprintsEqual(left, right string) bool {
-	l, err := decodeSPKI(left)
-	if err != nil {
-		return false
-	}
-	r, err := decodeSPKI(right)
-	if err != nil {
-		return false
-	}
-	return subtle.ConstantTimeCompare(l, r) == 1
+	return CompareSPKIFingerprints(left, right) == nil
 }
 
 func decodeSPKI(value string) ([]byte, error) {
