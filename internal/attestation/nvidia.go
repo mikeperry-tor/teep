@@ -38,6 +38,8 @@ const (
 // Fields are populated even on partial failure. Supports both EAT (local SPDM
 // verification) and JWT (NRAS cloud verification) formats.
 type NvidiaVerifyResult struct {
+	// Validity is populated only after successful signature and claims checks.
+	Validity EvidenceValidity
 	// SignatureErr is non-nil if signature verification failed.
 	// For EAT: cert chain or SPDM ECDSA signature failure.
 	// For JWT: JWT signature verification failure.
@@ -393,6 +395,11 @@ func (v *NVIDIAVerifier) verifyNVIDIAJWT(ctx context.Context, jwtPayload, jwksUR
 
 	result.Algorithm = token.Method.Alg()
 	extractPartialClaims(claims, result)
+	if claims.ExpiresAt == nil {
+		result.ClaimsErr = errors.New("verified NVIDIA JWT has no expiration")
+		return result
+	}
+	result.Validity, result.ClaimsErr = verifiedEvidenceValidity(claims.ExpiresAt.Time)
 	return result
 }
 
