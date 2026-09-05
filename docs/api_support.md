@@ -37,7 +37,7 @@ These are teep runtime/observability endpoints, not OpenAI-compatible inference 
 | `/health` | GET | Health API | JSON process health snapshot |
 | `/events` | GET | Dashboard status API | Server-Sent Events stream for live dashboard updates |
 | `/metrics` | GET | Prometheus API | Prometheus text-format counters |
-| `/v1/tee/report` | GET | Teep status API | Cached attestation report for a provider/model (`provider` and `model` query params required) |
+| `/v1/tee/report` | GET | Teep status API | Cached attestation report (`provider` and `model` required; optional `authority` selects an exact cached TLS scope; see [report selection](transport/README.md#cached-report-selection)) |
 
 Operational endpoints are intended for local monitoring and process supervision. In the current server implementation, these endpoints are unauthenticated and access control relies on binding to loopback by default.
 
