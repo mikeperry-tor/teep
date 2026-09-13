@@ -173,10 +173,55 @@ security-relevant build options, and local modifications. A human version string
 alone is insufficient. Define deterministic canonical encodings for build and
 policy identities before implementation. Never include API keys in those encodings.
 
+### 2a-i. Stapled evidence and independent subjects
+
+Design collection around a response carrying evidence for one or more attested
+subjects, including a gateway and selected backend. Delivery through a gateway does
+not make backend evidence a gateway assertion: verify each supported child quote,
+nonce, REPORTDATA, key, compose, and applicable collateral independently. Treat
+stapling as the preferred extension pattern for future providers, not a claim that
+all existing providers supply or cryptographically bind the same evidence.
+
+NEAR already follows this pattern. [NearCloud parsing](../../internal/provider/nearcloud/parser.go)
+selects a model from `model_attestations`; [NearDirect parsing](../../internal/provider/neardirect/parser.go)
+validates its direct/repeated representation. Both use
+[nearparse.Model.Raw](../../internal/provider/nearparse/model.go) to construct
+`FormatNear` model evidence. NearCloud additionally supplies separate gateway quote,
+compose, nonce, event-log, and transport fields. Preserve their strict envelope
+validation and model selection; do not accept a direct/gateway envelope interchange
+merely because the extracted model representation is shared.
+
+Separate delivery provenance, intrinsic evidence identity, consumer policy evaluation,
+and endpoint authorization. Preserve each original response envelope. Supported
+extractors may retain original child quotes, compose strings, signed artifacts, and
+collateral as independently content-addressed evidence, alongside their containing
+envelope digests. Byte extraction must preserve the exact cryptographic inputs;
+never reserialize signed content or equate a normalized compose with the attested
+bytes. Validate every containment relationship through the production parser. Mere
+containment proves no signature, key ownership, or gateway/backend relationship.
+
+The same child bytes can be shared whether fetched directly, stapled by a gateway,
+or loaded from disk. Different envelopes do not prevent sharing an identical child;
+different child bytes must not be merged because their fields look similar. Matching
+component repository/digest pairs permit artifact evidence sharing even when complete
+compose subjects differ. Reuse consumer policy results only through explicit shared
+checks with equivalent trust roots, identity requirements, tier applicability, and
+exemptions; matching provider lineage or signing keys alone is insufficient.
+
+Fresh gateway/backend admission remains bound to the caller's nonce and selected
+model/key/route. A saved stapled quote cannot answer a later nonce. A shared backend
+key or software subject does not merge NearCloud and NearDirect authorizations:
+NearCloud authenticates its gateway TLS peer and backend model key, while NearDirect
+authenticates the selected backend TLS peer. Gateway-only evidence, including current
+Tinfoil cloud and Venice ACI/1, must remain gateway-only. Cache generality must not
+manufacture backend CPU or software coverage that a provider does not supply.
+
 ### 2b. Verified subjects
 
-A verified subject identifies an authenticated artifact, its permitted use under an
-exact policy, and the verification record that established it. The verifier/build
+A software subject identifies an artifact or complete configuration independently
+of its delivery path. Its evaluations record permitted use under each exact
+consumer scope/policy and the verification that established it. A verified subject
+means that identity together with an eligible evaluation, not the identity alone. The verifier/build
 identity is not duplicated in the verified subject: the loader validates the associated verification context to enforce the upgrade
 boundary.
 
@@ -676,6 +721,17 @@ reuse, new instance/key admission, and independent model activity. Exercise dsta
 origin, including a model changing response format; no cached model result may
 satisfy a gateway-only response. Measure Venice discovery separately when model
 listing is requested, and retain its format-specific factor outcomes.
+Count network envelopes separately from attested subjects and component checks.
+NearCloud can deliver gateway and selected backend evidence in one HTTP response;
+do not budget another backend fetch when complete valid stapled evidence suffices.
+Count independently required collateral/provenance/NRAS requests, and distinguish
+material present in a response from material the shared verifier actually consumes.
+Compare direct-first/cloud-second and cloud-first/direct-second preparation with
+identical component evidence: fetch shared eligible objects once while evaluating
+each consumer's policy. Repeat for identical versus different compose bytes, fresh
+nonces, changed keys, and missing or ineligible stapled material. No cached report
+or matching key can replace fresh required admission or missing backend evidence.
+
 Measure component counts independently of CVM, model, and authorization counts.
 Include shared components across tiers, multiple repositories per compose/release
 set, one changed component, and a cache containing only the first required member.
@@ -1019,34 +1075,43 @@ new components through additional records, without new field names.
 
 | Collection | Contents and relationship |
 | --- | --- |
-| `evidence` | Original bytes, kind, and content digest. Shared by content digest; optional source metadata is diagnostic. |
-| `software` | Portable compose or release-set subjects, provider/format/tier scope, complete component membership, and verification results. Each component states its artifact identity and the checks performed. |
+| `evidence` | Original bytes, kind, and content digest. Shared by content digest; optional source metadata is diagnostic. `source_envelopes` records validated containment without granting trust. |
+| `software` | Provider-independent compose or release-set identities, with consumer-scoped evaluations, complete component membership, and verification results. Each component states its artifact identity and the checks performed. |
 | `operator_decisions` | Exact decision scope and subject, original failed-check evidence, explanation, and risk acknowledgements. These records never inherit authority from software results. |
 | `endpoint_authorizations` | Optional complete runtime admissions with explicit endpoint identity, report/evidence, software dependency selectors, and durable-state requirements. Omit for ordinary portable files. |
 
 `software` is the serialized form of the verified subjects described in Section 2.
-Nested `verification` records still belong logically to the evidence class: nesting
-is for readability, not a new trust boundary. No independent success flag or second
+Each software record has a provider-independent `subject` and an `evaluations` list.
+An evaluation contains explicit consumer scope, verification context, and complete
+component results. The same exact subject may have several consumer evaluations;
+a different compose digest always needs a different subject record. Nested
+`verification` records still belong logically to the evidence class: nesting is for
+readability, not a new trust boundary. No independent success flag or second
 subject table is needed. Runtime adapters normalize records into the shared stores.
 
-A software record's `verification.context` explicitly applies to its own checks and
-every nested component verification: verifier build, effective policy, provider,
-evidence format, and tier are fixed for that record. Evaluation timestamps remain
-on individual results; reuse must not refresh a component's verification time. Each component
-retains its own evidence, provenance requirement, results, and exemptions. A result
-from another context needs another software record; there is no hidden file-wide
-policy default. Build identity remains verification metadata, not an artifact name.
-A component result's reusable identity includes its artifact, scope, context, and
-required checks, independent of which configuration contains it.
+Each evaluation's `verification.context` applies to its own checks and nested
+component results: verifier build and effective policy are fixed for that evaluation.
+The evaluation's `scope` supplies consumer provider and tier; `subject.evidence_format`
+identifies the supported evidence representation, not its delivery provider.
+Evaluation timestamps remain on individual results. A result from another scope
+requires an explicit evaluation; there is no hidden file-wide policy default.
+A component result's reusable identity includes artifact, scope, context, and required
+checks, independently of the containing configuration or response envelope. An importer
+may share verified subchecks only after proving the equivalence described in Section 2a-i.
 
 Use `sha256:<hex>` content digests instead of local names for original evidence references. Resolve
 each against exactly one byte sequence and validated evidence kind; duplicate or
 conflicting evidence records in a file are errors. A merge may deduplicate identical
-bytes. A digest is an integrity check, not a trust root. Do not use YAML anchors,
+bytes. Optional `source_envelopes` lists content digests of retained original responses
+containing the extracted bytes. It can name multiple delivery paths for identical
+child evidence. Support the `attestation_envelope` kind and extraction relationships
+explicitly; these links do not replace the quote's cryptographic subject bindings.
+A digest is an integrity check, not a trust root. Do not use YAML anchors,
 relative file paths, display names, or list positions as references.
 
-Software dependencies use structured selectors containing `scope`, `subject`, and
-`policy`. For compose, the subject digest covers the exact original `app_compose`
+Software dependencies use structured selectors containing consumer `scope`, intrinsic
+`subject`, and effective `policy`; selectors resolve a subject plus its eligible
+evaluation. For compose, the subject digest covers the exact original `app_compose`
 bytes. For a release set, it covers canonical complete component identities, roles,
 and required binding relationships, not one primary release. Define this canonical
 encoding before implementation. Component order is not identity; distinct roles,
@@ -1083,216 +1148,220 @@ a new endpoint.
 ```yaml
 schema_version: 1
 software:
-- scope:
-    provider: nearcloud
-    evidence_format: dstack
-    tier: model
-  subject:
+- subject:
     kind: compose
     digest: sha256:<model compose>
-  verification:
-    context:
-      verifier_build: sha256:<teep build>
-      policy: sha256:<nearcloud model effective policy>
-    evidence:
-    - sha256:<model compose>
-    checks:
-      required_membership: pass
-      component_policy_coverage: pass
-    exemptions: []
-    evaluated_at: '2026-09-13T00:00:00Z'
-  components:
-  - role: container_image
-    artifact:
-      repository: nearaidev/compose-manager
-      digest: sha256:<nearaidev/compose-manager image>
+    evidence_format: near
+  evaluations:
+  - scope:
+      provider: nearcloud
+      tier: model
     verification:
+      context:
+        verifier_build: sha256:<teep build>
+        policy: sha256:<nearcloud model effective policy>
       evidence:
-      - sha256:<nearaidev/compose-manager provenance>
-      provenance: fulcio_signed
+      - sha256:<model compose>
       checks:
-        repository_policy: pass
-        transparency: pass
-        fulcio_identity: pass
-        source_repository: pass
-        dsse_signature: not_required
+        required_membership: pass
+        component_policy_coverage: pass
       exemptions: []
       evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: nearaidev/compose-manager-launcher
-      digest: sha256:<nearaidev/compose-manager-launcher image>
-    verification:
-      evidence:
-      - sha256:<nearaidev/compose-manager-launcher provenance>
-      provenance: fulcio_signed
-      checks:
-        repository_policy: pass
-        transparency: pass
-        fulcio_identity: pass
-        source_repository: pass
-        dsse_signature: not_required
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: certbot/dns-cloudflare
-      digest: sha256:<certbot/dns-cloudflare image>
-    verification:
-      evidence: []
-      provenance: compose_binding_only
-      checks:
-        repository_policy: pass
-        image_signature: not_required
-        transparency: not_required
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: otel/opentelemetry-collector-contrib
-      digest: sha256:<otel/opentelemetry-collector-contrib image>
-    verification:
-      evidence:
-      - sha256:<otel/opentelemetry-collector-contrib provenance>
-      provenance: sigstore_present
-      checks:
-        repository_policy: pass
-        transparency: pass
-        signer_fingerprint: pass
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-- scope:
-    provider: nearcloud
-    evidence_format: dstack
-    tier: gateway
-  subject:
+    components:
+    - role: container_image
+      artifact:
+        repository: nearaidev/compose-manager
+        digest: sha256:<nearaidev/compose-manager image>
+      verification:
+        evidence:
+        - sha256:<nearaidev/compose-manager provenance>
+        provenance: fulcio_signed
+        checks:
+          repository_policy: pass
+          transparency: pass
+          fulcio_identity: pass
+          source_repository: pass
+          dsse_signature: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: nearaidev/compose-manager-launcher
+        digest: sha256:<nearaidev/compose-manager-launcher image>
+      verification:
+        evidence:
+        - sha256:<nearaidev/compose-manager-launcher provenance>
+        provenance: fulcio_signed
+        checks:
+          repository_policy: pass
+          transparency: pass
+          fulcio_identity: pass
+          source_repository: pass
+          dsse_signature: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: certbot/dns-cloudflare
+        digest: sha256:<certbot/dns-cloudflare image>
+      verification:
+        evidence: []
+        provenance: compose_binding_only
+        checks:
+          repository_policy: pass
+          image_signature: not_required
+          transparency: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: otel/opentelemetry-collector-contrib
+        digest: sha256:<otel/opentelemetry-collector-contrib image>
+      verification:
+        evidence:
+        - sha256:<otel/opentelemetry-collector-contrib provenance>
+        provenance: sigstore_present
+        checks:
+          repository_policy: pass
+          transparency: pass
+          signer_fingerprint: pass
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
     kind: compose
     digest: sha256:<gateway compose>
-  verification:
-    context:
-      verifier_build: sha256:<teep build>
-      policy: sha256:<nearcloud gateway effective policy>
-    evidence:
-    - sha256:<gateway compose>
-    checks:
-      required_membership: pass
-      component_policy_coverage: pass
-    exemptions: []
-    evaluated_at: '2026-09-13T00:00:00Z'
-  components:
-  - role: container_image
-    artifact:
-      repository: nearaidev/cloud-api
-      digest: sha256:<nearaidev/cloud-api image>
+    evidence_format: dstack
+  evaluations:
+  - scope:
+      provider: nearcloud
+      tier: gateway
     verification:
+      context:
+        verifier_build: sha256:<teep build>
+        policy: sha256:<nearcloud gateway effective policy>
       evidence:
-      - sha256:<nearaidev/cloud-api provenance>
-      provenance: fulcio_signed
+      - sha256:<gateway compose>
       checks:
-        repository_policy: pass
-        transparency: pass
-        fulcio_identity: pass
-        source_repository: pass
-        dsse_signature: not_required
+        required_membership: pass
+        component_policy_coverage: pass
       exemptions: []
       evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: nearaidev/cvm-ingress
-      digest: sha256:<nearaidev/cvm-ingress image>
-    verification:
-      evidence:
-      - sha256:<nearaidev/cvm-ingress provenance>
-      provenance: fulcio_signed
-      checks:
-        repository_policy: pass
-        transparency: pass
-        fulcio_identity: pass
-        source_repository: pass
-        dsse_signature: not_required
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: nearaidev/dstack-vpc
-      digest: sha256:<nearaidev/dstack-vpc image>
-    verification:
-      evidence:
-      - sha256:<nearaidev/dstack-vpc provenance>
-      provenance: fulcio_signed
-      checks:
-        repository_policy: pass
-        transparency: pass
-        fulcio_identity: pass
-        source_repository: pass
-        dsse_signature: not_required
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: nearaidev/dstack-vpc-client
-      digest: sha256:<nearaidev/dstack-vpc-client image>
-    verification:
-      evidence:
-      - sha256:<nearaidev/dstack-vpc-client provenance>
-      provenance: fulcio_signed
-      checks:
-        repository_policy: pass
-        transparency: pass
-        fulcio_identity: pass
-        source_repository: pass
-        dsse_signature: not_required
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: datadog/agent
-      digest: sha256:<datadog/agent image>
-    verification:
-      evidence:
-      - sha256:<datadog/agent provenance>
-      provenance: sigstore_present
-      checks:
-        repository_policy: pass
-        transparency: pass
-        signer_fingerprint: pass
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: alpine
-      digest: sha256:<alpine image>
-    verification:
-      evidence:
-      - sha256:<alpine provenance>
-      provenance: fulcio_signed
-      checks:
-        repository_policy: pass
-        transparency: pass
-        fulcio_identity: pass
-        source_repository: pass
-        dsse_signature: not_required
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: otel/opentelemetry-collector-contrib
-      digest: sha256:<otel/opentelemetry-collector-contrib image>
-    verification:
-      evidence:
-      - sha256:<otel/opentelemetry-collector-contrib provenance>
-      provenance: sigstore_present
-      checks:
-        repository_policy: pass
-        transparency: pass
-        signer_fingerprint: pass
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
+    components:
+    - role: container_image
+      artifact:
+        repository: nearaidev/cloud-api
+        digest: sha256:<nearaidev/cloud-api image>
+      verification:
+        evidence:
+        - sha256:<nearaidev/cloud-api provenance>
+        provenance: fulcio_signed
+        checks:
+          repository_policy: pass
+          transparency: pass
+          fulcio_identity: pass
+          source_repository: pass
+          dsse_signature: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: nearaidev/cvm-ingress
+        digest: sha256:<nearaidev/cvm-ingress image>
+      verification:
+        evidence:
+        - sha256:<nearaidev/cvm-ingress provenance>
+        provenance: fulcio_signed
+        checks:
+          repository_policy: pass
+          transparency: pass
+          fulcio_identity: pass
+          source_repository: pass
+          dsse_signature: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: nearaidev/dstack-vpc
+        digest: sha256:<nearaidev/dstack-vpc image>
+      verification:
+        evidence:
+        - sha256:<nearaidev/dstack-vpc provenance>
+        provenance: fulcio_signed
+        checks:
+          repository_policy: pass
+          transparency: pass
+          fulcio_identity: pass
+          source_repository: pass
+          dsse_signature: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: nearaidev/dstack-vpc-client
+        digest: sha256:<nearaidev/dstack-vpc-client image>
+      verification:
+        evidence:
+        - sha256:<nearaidev/dstack-vpc-client provenance>
+        provenance: fulcio_signed
+        checks:
+          repository_policy: pass
+          transparency: pass
+          fulcio_identity: pass
+          source_repository: pass
+          dsse_signature: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: datadog/agent
+        digest: sha256:<datadog/agent image>
+      verification:
+        evidence:
+        - sha256:<datadog/agent provenance>
+        provenance: sigstore_present
+        checks:
+          repository_policy: pass
+          transparency: pass
+          signer_fingerprint: pass
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: alpine
+        digest: sha256:<alpine image>
+      verification:
+        evidence:
+        - sha256:<alpine provenance>
+        provenance: fulcio_signed
+        checks:
+          repository_policy: pass
+          transparency: pass
+          fulcio_identity: pass
+          source_repository: pass
+          dsse_signature: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: otel/opentelemetry-collector-contrib
+        digest: sha256:<otel/opentelemetry-collector-contrib image>
+      verification:
+        evidence:
+        - sha256:<otel/opentelemetry-collector-contrib provenance>
+        provenance: sigstore_present
+        checks:
+          repository_policy: pass
+          transparency: pass
+          signer_fingerprint: pass
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
 operator_decisions: []
 evidence:
 - digest: sha256:<model compose>
   kind: compose
   payload_base64: "<complete original bytes and verification dependencies>"
+  source_envelopes:
+  - sha256:<nearcloud original response envelope>
 - digest: sha256:<nearaidev/compose-manager provenance>
   kind: rekor_provenance
   payload_base64: "<complete original bytes and verification dependencies>"
@@ -1305,6 +1374,8 @@ evidence:
 - digest: sha256:<gateway compose>
   kind: compose
   payload_base64: "<complete original bytes and verification dependencies>"
+  source_envelopes:
+  - sha256:<nearcloud original response envelope>
 - digest: sha256:<nearaidev/cloud-api provenance>
   kind: rekor_provenance
   payload_base64: "<complete original bytes and verification dependencies>"
@@ -1323,102 +1394,112 @@ evidence:
 - digest: sha256:<alpine provenance>
   kind: rekor_provenance
   payload_base64: "<complete original bytes and verification dependencies>"
+- digest: sha256:<nearcloud original response envelope>
+  kind: attestation_envelope
+  payload_base64: "<complete original response; includes nonce context and all delivered
+    subjects>"
 ```
 
 ### 6b. Near direct: the same structure under its own policy
 
-NearDirect uses the same four-component shape without a gateway configuration.
-The same original provenance bytes can be reused, but the verification context
-names NearDirect's effective policy. Repetition here makes the example independently
+NearDirect uses the same model evidence representation and four-component shape
+without a gateway configuration. The same original provenance bytes can be reused,
+but its evaluation names NearDirect's effective policy. The example deliberately
+uses a different complete compose digest: equal component images do not imply equal
+attested compose bytes. If complete compose bytes are identical, store one subject
+with separate NearCloud and NearDirect evaluations instead of duplicating the subject. Repetition here makes the example independently
 readable; it does not require repeated downloads. Route selection and TLS/E2EE
 identity remain endpoint admission facts under the [NEAR route contract](../providers/near/near_attestation.md#neardirect-backend-selection).
 
 ```yaml
 schema_version: 1
 software:
-- scope:
-    provider: neardirect
-    evidence_format: dstack
-    tier: model
-  subject:
+- subject:
     kind: compose
-    digest: sha256:<model compose>
-  verification:
-    context:
-      verifier_build: sha256:<teep build>
-      policy: sha256:<neardirect model effective policy>
-    evidence:
-    - sha256:<model compose>
-    checks:
-      required_membership: pass
-      component_policy_coverage: pass
-    exemptions: []
-    evaluated_at: '2026-09-13T00:00:00Z'
-  components:
-  - role: container_image
-    artifact:
-      repository: nearaidev/compose-manager
-      digest: sha256:<nearaidev/compose-manager image>
+    digest: sha256:<direct model compose>
+    evidence_format: near
+  evaluations:
+  - scope:
+      provider: neardirect
+      tier: model
     verification:
+      context:
+        verifier_build: sha256:<teep build>
+        policy: sha256:<neardirect model effective policy>
       evidence:
-      - sha256:<nearaidev/compose-manager provenance>
-      provenance: fulcio_signed
+      - sha256:<direct model compose>
       checks:
-        repository_policy: pass
-        transparency: pass
-        fulcio_identity: pass
-        source_repository: pass
-        dsse_signature: not_required
+        required_membership: pass
+        component_policy_coverage: pass
       exemptions: []
       evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: nearaidev/compose-manager-launcher
-      digest: sha256:<nearaidev/compose-manager-launcher image>
-    verification:
-      evidence:
-      - sha256:<nearaidev/compose-manager-launcher provenance>
-      provenance: fulcio_signed
-      checks:
-        repository_policy: pass
-        transparency: pass
-        fulcio_identity: pass
-        source_repository: pass
-        dsse_signature: not_required
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: certbot/dns-cloudflare
-      digest: sha256:<certbot/dns-cloudflare image>
-    verification:
-      evidence: []
-      provenance: compose_binding_only
-      checks:
-        repository_policy: pass
-        image_signature: not_required
-        transparency: not_required
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: otel/opentelemetry-collector-contrib
-      digest: sha256:<otel/opentelemetry-collector-contrib image>
-    verification:
-      evidence:
-      - sha256:<otel/opentelemetry-collector-contrib provenance>
-      provenance: sigstore_present
-      checks:
-        repository_policy: pass
-        transparency: pass
-        signer_fingerprint: pass
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
+    components:
+    - role: container_image
+      artifact:
+        repository: nearaidev/compose-manager
+        digest: sha256:<nearaidev/compose-manager image>
+      verification:
+        evidence:
+        - sha256:<nearaidev/compose-manager provenance>
+        provenance: fulcio_signed
+        checks:
+          repository_policy: pass
+          transparency: pass
+          fulcio_identity: pass
+          source_repository: pass
+          dsse_signature: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: nearaidev/compose-manager-launcher
+        digest: sha256:<nearaidev/compose-manager-launcher image>
+      verification:
+        evidence:
+        - sha256:<nearaidev/compose-manager-launcher provenance>
+        provenance: fulcio_signed
+        checks:
+          repository_policy: pass
+          transparency: pass
+          fulcio_identity: pass
+          source_repository: pass
+          dsse_signature: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: certbot/dns-cloudflare
+        digest: sha256:<certbot/dns-cloudflare image>
+      verification:
+        evidence: []
+        provenance: compose_binding_only
+        checks:
+          repository_policy: pass
+          image_signature: not_required
+          transparency: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: otel/opentelemetry-collector-contrib
+        digest: sha256:<otel/opentelemetry-collector-contrib image>
+      verification:
+        evidence:
+        - sha256:<otel/opentelemetry-collector-contrib provenance>
+        provenance: sigstore_present
+        checks:
+          repository_policy: pass
+          transparency: pass
+          signer_fingerprint: pass
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
 operator_decisions: []
 evidence:
-- digest: sha256:<model compose>
+- digest: sha256:<direct model compose>
   kind: compose
   payload_base64: "<complete original bytes and verification dependencies>"
+  source_envelopes:
+  - sha256:<neardirect original response envelope>
 - digest: sha256:<nearaidev/compose-manager provenance>
   kind: rekor_provenance
   payload_base64: "<complete original bytes and verification dependencies>"
@@ -1428,6 +1509,10 @@ evidence:
 - digest: sha256:<otel/opentelemetry-collector-contrib provenance>
   kind: rekor_provenance
   payload_base64: "<complete original bytes and verification dependencies>"
+- digest: sha256:<neardirect original response envelope>
+  kind: attestation_envelope
+  payload_base64: "<complete original response; includes nonce context and all delivered
+    subjects>"
 ```
 
 ### 6c. Tinfoil: code and platform references in a release set
@@ -1442,51 +1527,52 @@ upstream issue in Section 1.
 ```yaml
 schema_version: 1
 software:
-- scope:
-    provider: tinfoil_v3_direct
-    evidence_format: tinfoil_v3
-    tier: model
-  subject:
+- subject:
     kind: release_set
     digest: sha256:<canonical complete TDX component set>
-  verification:
-    context:
-      verifier_build: sha256:<teep build>
-      policy: sha256:<Tinfoil direct TDX effective policy>
-    checks:
-      required_membership: pass
-      component_policy_coverage: pass
-    exemptions: []
-    evaluated_at: '2026-09-13T00:00:00Z'
-  components:
-  - role: code_release
-    artifact:
-      repository: tinfoilsh/confidential-example-model
-      digest: sha256:<tinfoilsh/confidential-example-model release subject>
-    required_binding: tdx_code_measurements
+    evidence_format: tinfoil_v3
+  evaluations:
+  - scope:
+      provider: tinfoil_v3_direct
+      tier: model
     verification:
-      evidence:
-      - sha256:<tinfoilsh/confidential-example-model signed release>
+      context:
+        verifier_build: sha256:<teep build>
+        policy: sha256:<Tinfoil direct TDX effective policy>
       checks:
-        release_signature: pass
-        signer_identity: pass
-        transparency: pass
+        required_membership: pass
+        component_policy_coverage: pass
       exemptions: []
       evaluated_at: '2026-09-13T00:00:00Z'
-  - role: platform_reference
-    artifact:
-      repository: tinfoilsh/hardware-measurements
-      digest: sha256:<tinfoilsh/hardware-measurements release subject>
-    required_binding: tdx_hardware_measurements
-    verification:
-      evidence:
-      - sha256:<tinfoilsh/hardware-measurements signed release>
-      checks:
-        release_signature: pass
-        signer_identity: pass
-        transparency: pass
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
+    components:
+    - role: code_release
+      artifact:
+        repository: tinfoilsh/confidential-example-model
+        digest: sha256:<tinfoilsh/confidential-example-model release subject>
+      required_binding: tdx_code_measurements
+      verification:
+        evidence:
+        - sha256:<tinfoilsh/confidential-example-model signed release>
+        checks:
+          release_signature: pass
+          signer_identity: pass
+          transparency: pass
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: platform_reference
+      artifact:
+        repository: tinfoilsh/hardware-measurements
+        digest: sha256:<tinfoilsh/hardware-measurements release subject>
+      required_binding: tdx_hardware_measurements
+      verification:
+        evidence:
+        - sha256:<tinfoilsh/hardware-measurements signed release>
+        checks:
+          release_signature: pass
+          signer_identity: pass
+          transparency: pass
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
 operator_decisions: []
 evidence:
 - digest: sha256:<tinfoilsh/confidential-example-model signed release>
@@ -1578,77 +1664,78 @@ under their own format policy; one format cannot satisfy the other.
 ```yaml
 schema_version: 1
 software:
-- scope:
-    provider: venice
-    evidence_format: aci/1
-    tier: gateway
-  subject:
+- subject:
     kind: compose
     digest: sha256:<gateway compose>
-  verification:
-    context:
-      verifier_build: sha256:<teep build>
-      policy: sha256:<venice gateway effective policy>
-    evidence:
-    - sha256:<gateway compose>
-    checks:
-      required_membership: pass
-      component_policy_coverage: pass
-    exemptions: []
-    evaluated_at: '2026-09-13T00:00:00Z'
-  components:
-  - role: container_image
-    artifact:
-      repository: ghcr.io/redpill-ai/private-ai-launcher
-      digest: sha256:<ghcr.io/redpill-ai/private-ai-launcher image>
+    evidence_format: aci/1
+  evaluations:
+  - scope:
+      provider: venice
+      tier: gateway
     verification:
-      evidence: []
-      provenance: compose_binding_only
+      context:
+        verifier_build: sha256:<teep build>
+        policy: sha256:<venice gateway effective policy>
+      evidence:
+      - sha256:<gateway compose>
       checks:
-        repository_policy: pass
-        image_signature: not_required
-        transparency: not_required
+        required_membership: pass
+        component_policy_coverage: pass
       exemptions: []
       evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: dstacktee/dstack-ingress
-      digest: sha256:<dstacktee/dstack-ingress image>
-    verification:
-      evidence: []
-      provenance: compose_binding_only
-      checks:
-        repository_policy: pass
-        image_signature: not_required
-        transparency: not_required
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: dstacktee/dstack-verifier
-      digest: sha256:<dstacktee/dstack-verifier image>
-    verification:
-      evidence: []
-      provenance: compose_binding_only
-      checks:
-        repository_policy: pass
-        image_signature: not_required
-        transparency: not_required
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
-  - role: container_image
-    artifact:
-      repository: prom/node-exporter
-      digest: sha256:<prom/node-exporter image>
-    verification:
-      evidence: []
-      provenance: compose_binding_only
-      checks:
-        repository_policy: pass
-        image_signature: not_required
-        transparency: not_required
-      exemptions: []
-      evaluated_at: '2026-09-13T00:00:00Z'
+    components:
+    - role: container_image
+      artifact:
+        repository: ghcr.io/redpill-ai/private-ai-launcher
+        digest: sha256:<ghcr.io/redpill-ai/private-ai-launcher image>
+      verification:
+        evidence: []
+        provenance: compose_binding_only
+        checks:
+          repository_policy: pass
+          image_signature: not_required
+          transparency: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: dstacktee/dstack-ingress
+        digest: sha256:<dstacktee/dstack-ingress image>
+      verification:
+        evidence: []
+        provenance: compose_binding_only
+        checks:
+          repository_policy: pass
+          image_signature: not_required
+          transparency: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: dstacktee/dstack-verifier
+        digest: sha256:<dstacktee/dstack-verifier image>
+      verification:
+        evidence: []
+        provenance: compose_binding_only
+        checks:
+          repository_policy: pass
+          image_signature: not_required
+          transparency: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+    - role: container_image
+      artifact:
+        repository: prom/node-exporter
+        digest: sha256:<prom/node-exporter image>
+      verification:
+        evidence: []
+        provenance: compose_binding_only
+        checks:
+          repository_policy: pass
+          image_signature: not_required
+          transparency: not_required
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
 operator_decisions: []
 evidence:
 - digest: sha256:<gateway compose>
@@ -1688,19 +1775,19 @@ endpoint_authorizations:
     software:
     - scope:
         provider: nearcloud
-        evidence_format: dstack
         tier: model
       subject:
         kind: compose
         digest: sha256:<model compose>
+        evidence_format: near
       policy: sha256:<nearcloud model effective policy>
     - scope:
         provider: nearcloud
-        evidence_format: dstack
         tier: gateway
       subject:
         kind: compose
         digest: sha256:<gateway compose>
+        evidence_format: dstack
       policy: sha256:<nearcloud gateway effective policy>
     decisions: []
     evaluated_at: '2026-09-13T00:00:00Z'
@@ -1749,7 +1836,7 @@ A snapshot exports a complete dependency graph for each successful set. Canonica
 set membership independently of presentation order; reject duplicate component
 identities, ambiguous software selectors, and evidence-digest/content conflicts.
 Do not bind parser behavior to the illustrated repositories or collection positions.
-Nested results must use their enclosing explicit scope and verification context;
+Nested results must use their enclosing evaluation's explicit scope and verification context;
 reject attempts to substitute a result from another policy, tier, or build. Autocache
 merges new components without overwriting sibling results or combining different
 compose versions into a configuration never observed. Adding/removing a component
@@ -1812,6 +1899,14 @@ values, missing evidence, invalid signatures, expiry, and authenticated revocati
 Record the supported per-class prerequisites and count expectations in tests. No
 class may inherit a factor-wide override merely because the factor has several
 failure modes.
+
+Use the [NEAR fixture loader](../../internal/integration/helpers_test.go),
+[NearCloud fixtures](../../internal/integration/nearcloud_test.go),
+[NearDirect fixtures](../../internal/integration/neardirect_test.go), and
+[shared model-key binding tests](../../internal/integration/near_model_binding_test.go)
+to establish stapled/direct parity and mutation coverage. Compare exact extracted
+bytes and component identities; do not assume captures from different times share
+quotes, nonces, TLS identities, or complete compose bytes.
 
 ### Phase 1: Shared data management and portable schema
 
@@ -1877,6 +1972,16 @@ For autocaching, measure the first live admission, then restart from the committ
 file and assert the same eligible retrieval savings as explicit preparation.
 Count background disk work separately; enabling autocaching must not introduce
 additional discovery, release polling, or verification network requests.
+Test one software subject with multiple consumer evaluations and two distinct
+compose subjects sharing all image evidence. Cover envelope containment tampering,
+wrong-model selection, missing backend attestations, changed gateway/backend keys,
+identical subobjects in different envelopes, different policy/exemption contexts,
+and concurrent direct/cloud imports. Assert that current envelope rejection rules
+and independent gateway/backend verification survive normalization. Autocache may
+merge portable child evidence but must not overwrite another consumer's evaluation
+or publish a partial endpoint authorization. Apply these contracts as future providers
+add stapled evidence, after their required shared-runtime migrations.
+
 Integrate cache-aware `verify` through shared admission services. Test fresh nonce
 admission despite persisted endpoint records, matching and unused decisions,
 remaining enforced failures, effective-policy equivalence, eligible retrieval
