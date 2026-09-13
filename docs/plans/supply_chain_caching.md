@@ -168,7 +168,10 @@ The evidence class contains original signed artifacts, certificate chains,
 transparency proofs, compose documents, and authenticated reference material.
 Store complete bytes needed for local verification, not just a source URL or a
 provider-asserted success field. Deduplicate bytes by a cryptographic content digest.
-Source URLs and retrieval times are diagnostic metadata, not trust roots.
+Source URLs are not trust roots. Retrieval time is diagnostic for signed immutable
+artifacts. For material whose existing eligibility depends on authenticated retrieval
+time, retain that observation as trusted deployment evidence and apply the current
+refresh policy; copying or importing the file must not reset it.
 
 Verification records also belong to the evidence class. Each records:
 
@@ -665,6 +668,23 @@ do not preserve a parallel generic-cache integration for portable prefill. Simil
 captured gateway keys across models are not sufficient to enable router-wide reuse.
 Endpoint persistence additionally requires the durable-state rules in this plan.
 
+### Required checks and diagnostic retrieval
+
+Classify each supply-chain retrieval by the production check it serves. The current
+merged-digest path can perform Rekor index/provenance requests even for compose-only
+components. A YAML `not_required` value alone must not suppress an enforced factor
+or claim those calls were eliminated. Route all required checks through shared
+prefill-aware services, retaining cached evidence for any query-dependent required
+result. When a query serves only an optional diagnostic, explicitly separate it from
+admission and avoid a new pre-inference request; report that the diagnostic was not
+refreshed. Verify this distinction against current factor aggregation, not just the
+component's signer policy. Never turn skipped diagnostics into successful checks.
+If an enforced diagnostic factor still requires a query, retain that request and
+revise the budget until its complete reusable result has a defined contract.
+Apply the same behavior to cache preparation, serving, and verification, with their
+specified completion differences. Venice's budget is conditional on this work and
+its shared-runtime migration; the compose-only example promises no image signatures.
+
 ### 4a. Release and image binding
 
 For digest-pinned compose images, match the full canonical repository and digest.
@@ -828,6 +848,82 @@ Run these scenarios through the normal request handler and authorization
 acquisition path with prefilled shared state, not a separate cache-only path.
 Unknown counts must be measured, not reported as zero. A result that skips required
 checks does not count as a cache saving.
+
+### 4d. Budgets for the complete YAML examples
+
+These are conditional, source-derived successful first-attempt budgets for one
+selected route, not measured cache-implementation results. Assume matching software,
+hardware-scoped collateral, policy, eligible trust metadata, and the GPU evidence
+shown. Count all teep-owned and library-owned HTTP requests, excluding the inference
+request itself. The complete portable examples target zero software, collateral,
+JWKS, TUF, and CT metadata retrievals. TLS handshakes and local checks still occur.
+`verify` adds its required live probe and always performs fresh admission; it cannot
+use the restoration column. "Complete validation" means every applicable check is
+evaluated under effective policy, retaining permitted failures and provider limits;
+it does not imply that unavailable backend evidence becomes authenticated.
+
+| Example and route assumptions | Software-only prefill, other dependency stores cold | Complete portable prefill, same build | Build update, retained dependencies sufficient and eligible | Eligible same-build endpoint restoration |
+| --- | --- | --- | --- | --- |
+| 6a NearCloud: one response, gateway and backend TDX, backend GPU | 23 + CT requests | 14 | 14 | 0 |
+| 6b NearDirect: default selection with two discovery requests, TDX and GPU | 15 + CT requests | 10 | 10 | 2 discovery requests |
+| 6c Tinfoil direct: one route-discovery request, TDX and GPU | 14 + CT requests | 9 | 9 | 1 discovery request |
+| 6h Tinfoil cloud: fixed SEV router, no backend GPU evidence | 2 + CT requests | 1 | 1 | 0 |
+| 6e Venice ACI/1: selected model, gateway TDX and relayed GPU evidence, after migration | 13 + CT requests + any diagnostic image retrievals | 8, after diagnostic retrieval behavior is resolved | 8 under the same condition | Unsupported until separate restoration eligibility exists |
+
+All columns that assume software reuse also require the required-versus-diagnostic
+classification above, including compose-only NEAR components. Remaining required
+image queries add to the budget; no `not_required` example field can waive them.
+
+The software-only column assumes same-build software results can bypass release
+verification; after a build update, missing Sigstore trust material adds TUF traffic.
+Do not count TUF as inherently necessary when complete matching trust material permits
+local verification. Every complete-prefill number requires the asserted dependency
+coverage, including CT. If that contract is not implemented or material is ineligible,
+report the added requests and the unmet requirement; do not advertise the smaller
+number as achieved. Current captures omit some library/bootstrap traffic and cannot
+establish these end-to-end totals by themselves.
+
+The decompositions are:
+
+- NearCloud: 1 attestation + 8 Intel collateral + 1 NRAS + 1 JWKS + 12 Proof of Cloud
+  = 23 before CT. Full portable dependencies remove 9, leaving 14.
+- NearDirect: 2 discovery + 1 attestation + 4 Intel + 1 NRAS + 1 JWKS + 6 Proof of Cloud
+  = 15 before CT. Full dependencies remove 5, leaving 10.
+- Tinfoil direct: 1 discovery + 1 attestation + 4 Intel + 1 NRAS + 1 JWKS + 6 Proof of
+  Cloud = 14 before CT. Full dependencies remove 5, leaving 9. This remains source-only
+  until the direct live-validation prerequisite is satisfied.
+- Tinfoil cloud: 1 attestation + 1 VCEK = 2 before CT; a matching VCEK leaves 1.
+  AMD signing chains are embedded. No backend validation is inferred.
+- Venice ACI/1: 1 attestation + 4 Intel + 1 NRAS + 1 JWKS + 6 Proof of Cloud = 13
+  before CT and diagnostic image lookups; eligible dependencies leave 8.
+
+The NEAR captures used for the examples are
+`nearcloud_z-ai_glm-5.3-flash_20260910_153519` and
+`neardirect_z-ai_glm-5.3-flash_20260909_201111` under
+[provider replay data](../../internal/integration/testdata/). NearCloud contains eight
+Intel requests with five distinct URLs: sharing retrievals can reduce that group
+to five before persistence, while complete eligible prefill reduces it to zero.
+The captures contain early Proof of Cloud 403 responses; fewer recorded responses
+are not successful quorum budgets or proof that no cancelled attempts started.
+Count six requests per successful default three-peer quote verification, separately
+for gateway and backend. Do not persist failure shortcuts as positive evidence.
+
+For 6d, a measurement decision replaces a local expected-value comparison and
+eliminates no quote/collateral requests by itself. Combine it with complete portable
+material. Example 6g illustrates relationships, not a complete provider scenario.
+Example 6f combines with 6a and its deployment-owned durable state to achieve its
+restoration budget; a read-only replica or build change instead uses fresh admission.
+Restoration can still need route discovery, new TLS handshakes, and ineligible CT
+metadata. A currently acquired runtime authorization needs no renewed admission;
+HTTP/2 reuse does not itself authenticate a new scope.
+
+Each primary example must have executable fixture coverage for all applicable
+columns. Assert zero network calls to every prepared dependency group with network
+access to those groups denied, and exact counts for live groups. Repeat with expired
+collateral, stale JWKS/CT metadata, unknown key IDs, changed hardware, missing TUF
+transitions, and build/policy changes. Verify the precise necessary retrieval or
+failure rather than filling missing data from ambient developer caches. Publish
+preparation costs, cold-start costs, and per-request reuse separately.
 
 ## 5. Commands and deployment
 
@@ -1209,6 +1305,7 @@ new components through additional records, without new field names.
 | --- | --- |
 | `evidence` | Original bytes, kind, and content digest. Shared by content digest; optional source metadata is diagnostic. `source_envelopes` records validated containment without granting trust; omit ineligible parent envelopes. |
 | `software` | Provider-independent compose or release-set identities, with consumer-scoped evaluations, complete component membership, and verification results. Each component states its artifact identity and the checks performed. |
+| `verification_material` | Typed collateral, certificates, issuer keys, and trust metadata, with lookup subjects, original inputs, verification dependencies, and admission eligibility. Shared independently of software and endpoint identities. |
 | `policy_state` | Deployment-policy authority, monotonic revision, and removed-decision digests. Required with decisions or removal history; absence denotes empty revision-zero policy. |
 | `operator_decisions` | Exact decision scope and subject, original failed-check evidence, explanation, and risk acknowledgements. These records never inherit authority from software results. |
 | `endpoint_authorizations` | Optional complete runtime admissions with explicit endpoint identity, report/evidence, software dependency selectors, and durable-state requirements. Omit for ordinary portable files. |
@@ -1220,7 +1317,9 @@ component results. The same exact subject may have several consumer evaluations;
 a different compose digest always needs a different subject record. Nested
 `verification` records still belong logically to the evidence class: nesting is for
 readability, not a new trust boundary. No independent success flag or second
-subject table is needed. Runtime adapters normalize records into the shared stores.
+software subject table is needed. Runtime adapters normalize records into the shared stores.
+The parallel `verification_material` collection represents prerequisites that are not
+software configurations; do not invent repositories or container roles for them.
 
 Each evaluation's `verification.context` applies to its own checks and nested
 component results: verifier build and effective policy are fixed for that evaluation.
@@ -1263,7 +1362,7 @@ rejection, never newest-pass selection. Foreign-build evaluations may coexist bu
 cannot be used directly. Duplicate active keys in imported files fail validation;
 routine refresh/merge must resolve them before export. Never select by list position.
 
-Writers present policy state, software, and decisions first, optional endpoint records next, and
+Writers present policy state, software, verification material, and decisions first, optional endpoint records next, and
 encoded evidence last. Use deterministic sorting for reviewable diffs, but do not
 interpret list order as semantic.
 
@@ -1277,6 +1376,72 @@ These are illustrative fragments, not deployable cache files. Angle-bracket valu
 stand for real bytes, digests, keys, and complete check sets. Loaders reject literal
 placeholders or incomplete required coverage. No fixed repository roster, timestamp,
 component count, or provider-specific field name is prescribed by the examples.
+
+### Material selection and dependency coverage
+
+`verification_material` is a typed list, not a generic HTTP response cache. Each
+record has `subject`, `inputs`, and `verification`. Its kind defines the required
+subject fields, input roles, checks, and eligibility rules. A collateral set's digest
+covers its canonical complete input membership with a versioned, kind-specific
+encoding; a single-object subject uses the original content digest. FMSPC, CA,
+product/HWID/TCB, issuer, or authority are applicability fields, not user-defined
+record names. Recompute them from authenticated material. Fresh quote/token/TLS
+inputs select eligible records through the shared production verifier. A matching
+lookup key alone never authenticates a new report, key, or connection.
+
+`inputs` names each original evidence object by digest, including certificate chains
+returned in HTTP headers. No payload placeholder implicitly includes other evidence
+objects. Required signed bundles retain their complete original representation;
+additional roots, metadata, and chains use explicit references. Each typed adapter
+must reject incomplete inputs. `verification.dependencies` uses `source: cache`
+with an exact material subject, or `source: embedded` / `source: configured` with
+the required build-owned or configuration-owned identity. A configured origin must
+match current policy and be independently authenticated during acquisition; a YAML
+URL cannot install a new trust root. Resolve cached dependencies under the caller's
+current applicable material policy and build; do not inherit a software policy as
+a collateral or issuer-key policy. Reject missing, ambiguous, cyclic, or substituted
+dependencies. Reuse equivalent material across provider/tier consumers only after
+checking these requirements. Embedded trust dependencies require no HTTP request.
+
+The examples use one `verification` per material record under an explicit material
+policy. Separate policy/build evaluations may use separate records for the same
+subject; uniqueness and merge rules use subject/policy/build, not digest alone.
+Original evidence remains deduplicated. This presentation does not require a second
+runtime cache: each adapter prefills the existing verifier-owned dependency store.
+Freshly fetched eligible material uses the same export path as prefetched material.
+
+`eligibility` describes a typed verifier obligation, not an operator override or
+cached verdict for a future report. Signed validity, versions, and revocation data
+come from the original inputs. Recheck them at new admission with the real clock.
+For authenticated-retrieval material such as JWKS and the CT log list, preserve the
+original retrieval time through trusted export/import and apply the current issuer
+or log-list refresh rules. Preserve NVIDIA's key-rotation refresh behavior. Import
+must not extend the current time-based eligibility window or supply a timeless
+key authorization. Incompatible new policy, expired metadata, or an unknown key
+requires the existing retrieval or rejection path. These constraints do not add
+expiry to an already published endpoint authorization.
+
+CT material must prefill every relevant CT checker, including dependency-owned
+clients; loading it into only the inference client cannot establish zero CT HTTP
+requests. Continue live WebPKI, TLS identity, and SCT validation. Sigstore material
+must cover the root transition chain from the current build's bootstrap root,
+timestamp/snapshot/targets and any delegated metadata needed for the selected trust
+target. The illustrated root chain has one member and no delegations; deployments
+retain all required transitions and delegated metadata as additional typed inputs.
+Run existing TUF signature, expiry, version, target-hash, and rollback checks locally;
+a root update may require additional evidence. Neither TUF nor CT prefill may weaken
+bootstrap authentication to avoid a request.
+
+Examples 6a, 6b, 6c, 6e, and 6h are portable admission-prefill examples for their stated
+hardware and evidence. Their numeric budgets are in Section 4d. Populate real bytes
+and complete required checks before turning them into fixtures. The Intel examples
+assume processor-CA collateral; actual quote-derived CA and platform scope control
+selection. NearCloud has two TCB-information objects and shares eligible QE/CRL
+objects; NearDirect can reuse the backend set. No saved attestation response, NRAS
+JWT, or Proof of Cloud response answers a new challenge. Current embedded Rekor verification keys and NVIDIA device-identity roots add no
+retrievals; record the build-owned dependencies rather than fabricating downloaded
+trust objects. No independently portable
+NVIDIA RIM verifier is assumed: the NRAS submission remains live.
 
 ### 6a. Near cloud: separate model and gateway configurations
 
@@ -1328,6 +1493,10 @@ software:
           dsse_signature: not_required
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
     - role: container_image
       artifact:
         repository: nearaidev/compose-manager-launcher
@@ -1344,6 +1513,10 @@ software:
           dsse_signature: not_required
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
     - role: container_image
       artifact:
         repository: certbot/dns-cloudflare
@@ -1371,6 +1544,10 @@ software:
           signer_fingerprint: pass
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
 - subject:
     kind: compose
     digest: sha256:<gateway compose>
@@ -1408,6 +1585,10 @@ software:
           dsse_signature: not_required
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
     - role: container_image
       artifact:
         repository: nearaidev/cvm-ingress
@@ -1424,6 +1605,10 @@ software:
           dsse_signature: not_required
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
     - role: container_image
       artifact:
         repository: nearaidev/dstack-vpc
@@ -1440,6 +1625,10 @@ software:
           dsse_signature: not_required
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
     - role: container_image
       artifact:
         repository: nearaidev/dstack-vpc-client
@@ -1456,6 +1645,10 @@ software:
           dsse_signature: not_required
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
     - role: container_image
       artifact:
         repository: datadog/agent
@@ -1470,6 +1663,10 @@ software:
           signer_fingerprint: pass
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
     - role: container_image
       artifact:
         repository: alpine
@@ -1486,6 +1683,10 @@ software:
           dsse_signature: not_required
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
     - role: container_image
       artifact:
         repository: otel/opentelemetry-collector-contrib
@@ -1500,49 +1701,200 @@ software:
           signer_fingerprint: pass
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
+verification_material:
+- subject:
+    kind: intel_tdx_collateral
+    digest: sha256:<model canonical collateral set>
+    fmspc: "<model FMSPC>"
+    pck_ca: processor
+    api_version: 4
+  inputs:
+    tcb_info: sha256:<model TCB information>
+    qe_identity: sha256:<Intel QE identity>
+    pck_crl: sha256:<Intel PCK CRL>
+    root_ca_crl: sha256:<Intel root CA CRL>
+    issuer_chains:
+    - sha256:<model TCB issuer chain>
+    - sha256:<QE identity issuer chain>
+    - sha256:<PCK CRL issuer chain>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<intel_tdx_collateral applicable material policy>
+    dependencies:
+    - source: embedded
+      kind: trust_anchor
+      identity: sha256:<Intel root in this build>
+    checks:
+      signature_chains: pass
+      collateral_scope: pass
+    eligibility:
+      basis: signed_evidence
+      recheck:
+      - validity
+      - revocation
+      - fresh_quote_platform_and_tcb
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: intel_tdx_collateral
+    digest: sha256:<gateway canonical collateral set>
+    fmspc: "<gateway FMSPC>"
+    pck_ca: processor
+    api_version: 4
+  inputs:
+    tcb_info: sha256:<gateway TCB information>
+    qe_identity: sha256:<Intel QE identity>
+    pck_crl: sha256:<Intel PCK CRL>
+    root_ca_crl: sha256:<Intel root CA CRL>
+    issuer_chains:
+    - sha256:<gateway TCB issuer chain>
+    - sha256:<QE identity issuer chain>
+    - sha256:<PCK CRL issuer chain>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<intel_tdx_collateral applicable material policy>
+    dependencies:
+    - source: embedded
+      kind: trust_anchor
+      identity: sha256:<Intel root in this build>
+    checks:
+      signature_chains: pass
+      collateral_scope: pass
+    eligibility:
+      basis: signed_evidence
+      recheck:
+      - validity
+      - revocation
+      - fresh_quote_platform_and_tcb
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: nvidia_jwks
+    digest: sha256:<NVIDIA JWKS>
+    authority: https://nras.attestation.nvidia.com/.well-known/jwks.json
+  inputs:
+    jwks: sha256:<NVIDIA JWKS>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<nvidia_jwks applicable material policy>
+    dependencies:
+    - source: configured
+      kind: authenticated_origin
+      identity: https://nras.attestation.nvidia.com/.well-known/jwks.json
+    checks:
+      origin_authentication: pass
+      keyset_structure: pass
+    eligibility:
+      basis: authenticated_retrieval
+      retrieved_at: '2026-09-13T00:00:00Z'
+      recheck:
+      - issuer_key_refresh_policy
+      - new_token_signature_and_claims
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: ct_log_list
+    digest: sha256:<CT log list>
+    authority: chrome_ct_log_list
+  inputs:
+    log_list: sha256:<CT log list>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<ct_log_list applicable material policy>
+    dependencies:
+    - source: configured
+      kind: authenticated_origin
+      identity: "<configured CT log-list origin>"
+    checks:
+      origin_authentication: pass
+      log_list_structure: pass
+    eligibility:
+      basis: authenticated_retrieval
+      retrieved_at: '2026-09-13T00:00:00Z'
+      recheck:
+      - log_list_refresh_policy
+      - live_peer_certificate_and_scts
+    evaluated_at: '2026-09-13T00:00:00Z'
 operator_decisions: []
 evidence:
 - digest: sha256:<model compose>
   kind: compose
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
   source_envelopes:
   - sha256:<nearcloud original response envelope>
 - digest: sha256:<nearaidev/compose-manager provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<nearaidev/compose-manager-launcher provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<otel/opentelemetry-collector-contrib provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<gateway compose>
   kind: compose
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
   source_envelopes:
   - sha256:<nearcloud original response envelope>
 - digest: sha256:<nearaidev/cloud-api provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<nearaidev/cvm-ingress provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<nearaidev/dstack-vpc provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<nearaidev/dstack-vpc-client provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<datadog/agent provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<alpine provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<nearcloud original response envelope>
   kind: attestation_envelope
-  payload_base64: "<complete original response; includes nonce context and all delivered
-    subjects>"
+  payload_base64: "<complete original response; includes nonce context and all delivered subjects>"
+- digest: sha256:<model TCB information>
+  kind: intel_tcb_info
+  payload_base64: "<original signed TCB information JSON>"
+- digest: sha256:<Intel QE identity>
+  kind: intel_qe_identity
+  payload_base64: "<original signed QE identity JSON>"
+- digest: sha256:<Intel PCK CRL>
+  kind: x509_crl
+  payload_base64: "<original DER CRL for the applicable PCK CA>"
+- digest: sha256:<Intel root CA CRL>
+  kind: x509_crl
+  payload_base64: "<original DER CRL>"
+- digest: sha256:<gateway TCB information>
+  kind: intel_tcb_info
+  payload_base64: "<original signed TCB information JSON>"
+- digest: sha256:<NVIDIA JWKS>
+  kind: jwk_set
+  payload_base64: "<original NVIDIA JWKS JSON>"
+- digest: sha256:<CT log list>
+  kind: ct_log_list
+  payload_base64: "<original authenticated CT log-list JSON>"
+- digest: sha256:<model TCB issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original model TCB issuer chain bytes from the corresponding HTTP header>"
+- digest: sha256:<QE identity issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original QE identity issuer chain bytes from the corresponding HTTP header>"
+- digest: sha256:<PCK CRL issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original PCK CRL issuer chain bytes from the corresponding HTTP header>"
+- digest: sha256:<gateway TCB issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original gateway TCB issuer chain bytes from the corresponding HTTP header>"
 ```
 
 ### 6b. Near direct: the same structure under its own policy
@@ -1596,6 +1948,10 @@ software:
           dsse_signature: not_required
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
     - role: container_image
       artifact:
         repository: nearaidev/compose-manager-launcher
@@ -1612,6 +1968,10 @@ software:
           dsse_signature: not_required
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
     - role: container_image
       artifact:
         repository: certbot/dns-cloudflare
@@ -1639,26 +1999,138 @@ software:
           signer_fingerprint: pass
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+        dependencies:
+        - source: embedded
+          kind: rekor_log_key
+          identity: sha256:<Rekor verification key in this build>
+verification_material:
+- subject:
+    kind: intel_tdx_collateral
+    digest: sha256:<model canonical collateral set>
+    fmspc: "<model FMSPC>"
+    pck_ca: processor
+    api_version: 4
+  inputs:
+    tcb_info: sha256:<model TCB information>
+    qe_identity: sha256:<Intel QE identity>
+    pck_crl: sha256:<Intel PCK CRL>
+    root_ca_crl: sha256:<Intel root CA CRL>
+    issuer_chains:
+    - sha256:<model TCB issuer chain>
+    - sha256:<QE identity issuer chain>
+    - sha256:<PCK CRL issuer chain>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<intel_tdx_collateral applicable material policy>
+    dependencies:
+    - source: embedded
+      kind: trust_anchor
+      identity: sha256:<Intel root in this build>
+    checks:
+      signature_chains: pass
+      collateral_scope: pass
+    eligibility:
+      basis: signed_evidence
+      recheck:
+      - validity
+      - revocation
+      - fresh_quote_platform_and_tcb
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: nvidia_jwks
+    digest: sha256:<NVIDIA JWKS>
+    authority: https://nras.attestation.nvidia.com/.well-known/jwks.json
+  inputs:
+    jwks: sha256:<NVIDIA JWKS>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<nvidia_jwks applicable material policy>
+    dependencies:
+    - source: configured
+      kind: authenticated_origin
+      identity: https://nras.attestation.nvidia.com/.well-known/jwks.json
+    checks:
+      origin_authentication: pass
+      keyset_structure: pass
+    eligibility:
+      basis: authenticated_retrieval
+      retrieved_at: '2026-09-13T00:00:00Z'
+      recheck:
+      - issuer_key_refresh_policy
+      - new_token_signature_and_claims
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: ct_log_list
+    digest: sha256:<CT log list>
+    authority: chrome_ct_log_list
+  inputs:
+    log_list: sha256:<CT log list>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<ct_log_list applicable material policy>
+    dependencies:
+    - source: configured
+      kind: authenticated_origin
+      identity: "<configured CT log-list origin>"
+    checks:
+      origin_authentication: pass
+      log_list_structure: pass
+    eligibility:
+      basis: authenticated_retrieval
+      retrieved_at: '2026-09-13T00:00:00Z'
+      recheck:
+      - log_list_refresh_policy
+      - live_peer_certificate_and_scts
+    evaluated_at: '2026-09-13T00:00:00Z'
 operator_decisions: []
 evidence:
 - digest: sha256:<direct model compose>
   kind: compose
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
   source_envelopes:
   - sha256:<neardirect original response envelope>
 - digest: sha256:<nearaidev/compose-manager provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<nearaidev/compose-manager-launcher provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<otel/opentelemetry-collector-contrib provenance>
   kind: rekor_provenance
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<neardirect original response envelope>
   kind: attestation_envelope
-  payload_base64: "<complete original response; includes nonce context and all delivered
-    subjects>"
+  payload_base64: "<complete original response; includes nonce context and all delivered subjects>"
+- digest: sha256:<model TCB information>
+  kind: intel_tcb_info
+  payload_base64: "<original signed TCB information JSON>"
+- digest: sha256:<Intel QE identity>
+  kind: intel_qe_identity
+  payload_base64: "<original signed QE identity JSON>"
+- digest: sha256:<Intel PCK CRL>
+  kind: x509_crl
+  payload_base64: "<original DER CRL for the applicable PCK CA>"
+- digest: sha256:<Intel root CA CRL>
+  kind: x509_crl
+  payload_base64: "<original DER CRL>"
+- digest: sha256:<NVIDIA JWKS>
+  kind: jwk_set
+  payload_base64: "<original NVIDIA JWKS JSON>"
+- digest: sha256:<CT log list>
+  kind: ct_log_list
+  payload_base64: "<original authenticated CT log-list JSON>"
+- digest: sha256:<model TCB issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original model TCB issuer chain bytes from the corresponding HTTP header>"
+- digest: sha256:<QE identity issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original QE identity issuer chain bytes from the corresponding HTTP header>"
+- digest: sha256:<PCK CRL issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original PCK CRL issuer chain bytes from the corresponding HTTP header>"
 ```
 
 ### 6c. Tinfoil: code and platform references in a release set
@@ -1698,6 +2170,12 @@ software:
         digest: sha256:<tinfoilsh/confidential-example-model release subject>
       required_binding: tdx_code_measurements
       verification:
+        dependencies:
+        - source: cache
+          subject:
+            kind: sigstore_trust_material
+            digest: sha256:<canonical Sigstore trust material set>
+            authority: sigstore_public_good
         evidence:
         - sha256:<tinfoilsh/confidential-example-model signed release>
         checks:
@@ -1712,6 +2190,12 @@ software:
         digest: sha256:<tinfoilsh/hardware-measurements release subject>
       required_binding: tdx_hardware_measurements
       verification:
+        dependencies:
+        - source: cache
+          subject:
+            kind: sigstore_trust_material
+            digest: sha256:<canonical Sigstore trust material set>
+            authority: sigstore_public_good
         evidence:
         - sha256:<tinfoilsh/hardware-measurements signed release>
         checks:
@@ -1720,14 +2204,167 @@ software:
           transparency: pass
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+verification_material:
+- subject:
+    kind: intel_tdx_collateral
+    digest: sha256:<model canonical collateral set>
+    fmspc: "<model FMSPC>"
+    pck_ca: processor
+    api_version: 4
+  inputs:
+    tcb_info: sha256:<model TCB information>
+    qe_identity: sha256:<Intel QE identity>
+    pck_crl: sha256:<Intel PCK CRL>
+    root_ca_crl: sha256:<Intel root CA CRL>
+    issuer_chains:
+    - sha256:<model TCB issuer chain>
+    - sha256:<QE identity issuer chain>
+    - sha256:<PCK CRL issuer chain>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<intel_tdx_collateral applicable material policy>
+    dependencies:
+    - source: embedded
+      kind: trust_anchor
+      identity: sha256:<Intel root in this build>
+    checks:
+      signature_chains: pass
+      collateral_scope: pass
+    eligibility:
+      basis: signed_evidence
+      recheck:
+      - validity
+      - revocation
+      - fresh_quote_platform_and_tcb
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: nvidia_jwks
+    digest: sha256:<NVIDIA JWKS>
+    authority: https://nras.attestation.nvidia.com/.well-known/jwks.json
+  inputs:
+    jwks: sha256:<NVIDIA JWKS>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<nvidia_jwks applicable material policy>
+    dependencies:
+    - source: configured
+      kind: authenticated_origin
+      identity: https://nras.attestation.nvidia.com/.well-known/jwks.json
+    checks:
+      origin_authentication: pass
+      keyset_structure: pass
+    eligibility:
+      basis: authenticated_retrieval
+      retrieved_at: '2026-09-13T00:00:00Z'
+      recheck:
+      - issuer_key_refresh_policy
+      - new_token_signature_and_claims
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: sigstore_trust_material
+    digest: sha256:<canonical Sigstore trust material set>
+    authority: sigstore_public_good
+  inputs:
+    timestamp: sha256:<Sigstore timestamp>
+    snapshot: sha256:<Sigstore snapshot>
+    targets: sha256:<Sigstore targets>
+    trusted_root: sha256:<Sigstore trusted_root>
+    root_chain:
+    - sha256:<Sigstore root>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<sigstore_trust_material applicable material policy>
+    dependencies:
+    - source: embedded
+      kind: tuf_bootstrap_root
+      identity: sha256:<Sigstore bootstrap root in this build>
+    checks:
+      tuf_signatures: pass
+      versions_and_target_hashes: pass
+    eligibility:
+      basis: signed_evidence
+      recheck:
+      - tuf_expiry
+      - rollback_and_root_rotation
+      - signer_and_log_policy
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: ct_log_list
+    digest: sha256:<CT log list>
+    authority: chrome_ct_log_list
+  inputs:
+    log_list: sha256:<CT log list>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<ct_log_list applicable material policy>
+    dependencies:
+    - source: configured
+      kind: authenticated_origin
+      identity: "<configured CT log-list origin>"
+    checks:
+      origin_authentication: pass
+      log_list_structure: pass
+    eligibility:
+      basis: authenticated_retrieval
+      retrieved_at: '2026-09-13T00:00:00Z'
+      recheck:
+      - log_list_refresh_policy
+      - live_peer_certificate_and_scts
+    evaluated_at: '2026-09-13T00:00:00Z'
 operator_decisions: []
 evidence:
 - digest: sha256:<tinfoilsh/confidential-example-model signed release>
   kind: sigstore_bundle
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
 - digest: sha256:<tinfoilsh/hardware-measurements signed release>
   kind: sigstore_bundle
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
+- digest: sha256:<model TCB information>
+  kind: intel_tcb_info
+  payload_base64: "<original signed TCB information JSON>"
+- digest: sha256:<Intel QE identity>
+  kind: intel_qe_identity
+  payload_base64: "<original signed QE identity JSON>"
+- digest: sha256:<Intel PCK CRL>
+  kind: x509_crl
+  payload_base64: "<original DER CRL for the applicable PCK CA>"
+- digest: sha256:<Intel root CA CRL>
+  kind: x509_crl
+  payload_base64: "<original DER CRL>"
+- digest: sha256:<NVIDIA JWKS>
+  kind: jwk_set
+  payload_base64: "<original NVIDIA JWKS JSON>"
+- digest: sha256:<Sigstore root>
+  kind: tuf_root
+  payload_base64: "<original signed TUF root metadata>"
+- digest: sha256:<Sigstore timestamp>
+  kind: tuf_timestamp
+  payload_base64: "<original signed TUF timestamp metadata>"
+- digest: sha256:<Sigstore snapshot>
+  kind: tuf_snapshot
+  payload_base64: "<original signed TUF snapshot metadata>"
+- digest: sha256:<Sigstore targets>
+  kind: tuf_targets
+  payload_base64: "<original signed TUF targets metadata>"
+- digest: sha256:<Sigstore trusted_root>
+  kind: sigstore_trusted_root
+  payload_base64: "<original trusted-root target bytes>"
+- digest: sha256:<CT log list>
+  kind: ct_log_list
+  payload_base64: "<original authenticated CT log-list JSON>"
+- digest: sha256:<model TCB issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original model TCB issuer chain bytes from the corresponding HTTP header>"
+- digest: sha256:<QE identity issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original QE identity issuer chain bytes from the corresponding HTTP header>"
+- digest: sha256:<PCK CRL issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original PCK CRL issuer chain bytes from the corresponding HTTP header>"
 ```
 
 Cloud uses the same structure with `provider: tinfoil_v3_cloud`, `tier: gateway`,
@@ -1885,11 +2522,120 @@ software:
           transparency: not_required
         exemptions: []
         evaluated_at: '2026-09-13T00:00:00Z'
+verification_material:
+- subject:
+    kind: intel_tdx_collateral
+    digest: sha256:<gateway canonical collateral set>
+    fmspc: "<gateway FMSPC>"
+    pck_ca: processor
+    api_version: 4
+  inputs:
+    tcb_info: sha256:<gateway TCB information>
+    qe_identity: sha256:<Intel QE identity>
+    pck_crl: sha256:<Intel PCK CRL>
+    root_ca_crl: sha256:<Intel root CA CRL>
+    issuer_chains:
+    - sha256:<gateway TCB issuer chain>
+    - sha256:<QE identity issuer chain>
+    - sha256:<PCK CRL issuer chain>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<intel_tdx_collateral applicable material policy>
+    dependencies:
+    - source: embedded
+      kind: trust_anchor
+      identity: sha256:<Intel root in this build>
+    checks:
+      signature_chains: pass
+      collateral_scope: pass
+    eligibility:
+      basis: signed_evidence
+      recheck:
+      - validity
+      - revocation
+      - fresh_quote_platform_and_tcb
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: nvidia_jwks
+    digest: sha256:<NVIDIA JWKS>
+    authority: https://nras.attestation.nvidia.com/.well-known/jwks.json
+  inputs:
+    jwks: sha256:<NVIDIA JWKS>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<nvidia_jwks applicable material policy>
+    dependencies:
+    - source: configured
+      kind: authenticated_origin
+      identity: https://nras.attestation.nvidia.com/.well-known/jwks.json
+    checks:
+      origin_authentication: pass
+      keyset_structure: pass
+    eligibility:
+      basis: authenticated_retrieval
+      retrieved_at: '2026-09-13T00:00:00Z'
+      recheck:
+      - issuer_key_refresh_policy
+      - new_token_signature_and_claims
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: ct_log_list
+    digest: sha256:<CT log list>
+    authority: chrome_ct_log_list
+  inputs:
+    log_list: sha256:<CT log list>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<ct_log_list applicable material policy>
+    dependencies:
+    - source: configured
+      kind: authenticated_origin
+      identity: "<configured CT log-list origin>"
+    checks:
+      origin_authentication: pass
+      log_list_structure: pass
+    eligibility:
+      basis: authenticated_retrieval
+      retrieved_at: '2026-09-13T00:00:00Z'
+      recheck:
+      - log_list_refresh_policy
+      - live_peer_certificate_and_scts
+    evaluated_at: '2026-09-13T00:00:00Z'
 operator_decisions: []
 evidence:
 - digest: sha256:<gateway compose>
   kind: compose
-  payload_base64: "<complete original bytes and verification dependencies>"
+  payload_base64: "<complete original bytes of this evidence object>"
+- digest: sha256:<gateway TCB information>
+  kind: intel_tcb_info
+  payload_base64: "<original signed TCB information JSON>"
+- digest: sha256:<Intel QE identity>
+  kind: intel_qe_identity
+  payload_base64: "<original signed QE identity JSON>"
+- digest: sha256:<Intel PCK CRL>
+  kind: x509_crl
+  payload_base64: "<original DER CRL for the applicable PCK CA>"
+- digest: sha256:<Intel root CA CRL>
+  kind: x509_crl
+  payload_base64: "<original DER CRL>"
+- digest: sha256:<NVIDIA JWKS>
+  kind: jwk_set
+  payload_base64: "<original NVIDIA JWKS JSON>"
+- digest: sha256:<CT log list>
+  kind: ct_log_list
+  payload_base64: "<original authenticated CT log-list JSON>"
+- digest: sha256:<gateway TCB issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original gateway TCB issuer chain bytes from the corresponding HTTP header>"
+- digest: sha256:<QE identity issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original QE identity issuer chain bytes from the corresponding HTTP header>"
+- digest: sha256:<PCK CRL issuer chain>
+  kind: x509_certificate_chain
+  payload_base64: "<original PCK CRL issuer chain bytes from the corresponding HTTP header>"
 ```
 
 ### 6f. Optional endpoint persistence references software by identity
@@ -1919,7 +2665,10 @@ endpoint_authorizations:
       verifier_build: sha256:<teep build>
       policy: sha256:<complete NearCloud admission effective policy>
     evidence:
-    - sha256:<complete nonce-bound gateway and model evidence>
+    - sha256:<nearcloud original response envelope>
+    - sha256:<historical backend NRAS JWT>
+    - sha256:<historical backend Proof of Cloud response>
+    - sha256:<historical gateway Proof of Cloud response>
     report: sha256:<complete immutable admission report>
     software:
     - scope:
@@ -1942,11 +2691,75 @@ endpoint_authorizations:
       policy: sha256:<nearcloud gateway effective policy>
     decisions: []
     evaluated_at: '2026-09-13T00:00:00Z'
-  durable_state: "<complete validated invalidation/restoration state>"
+    completion:
+      required_non_deferred_checks: satisfied_effective_policy
+      e2ee_usable: pass
+  durable_state:
+    state_identity: "<deployment state identity>"
+    authorization_identity: "<durable authorization identity>"
+    creation_revision: 12
+evidence:
+- digest: sha256:<complete immutable admission report>
+  kind: verification_report
+  payload_base64: >-
+    <complete original normalized immutable admission report, including actual failed checks and
+    permitted exceptions>
+- digest: sha256:<historical backend NRAS JWT>
+  kind: nras_response
+  payload_base64: "<original signed response and report-binding metadata for the admitted backend
+    GPU payload>"
+- digest: sha256:<historical backend Proof of Cloud response>
+  kind: proof_of_cloud_response
+  payload_base64: "<original response bound to the admitted backend quote>"
+- digest: sha256:<historical gateway Proof of Cloud response>
+  kind: proof_of_cloud_response
+  payload_base64: "<original response bound to the admitted gateway quote>"
 ```
 
-A real file contains all referenced evidence and software records and satisfies the
-complete Section 2c and durable-state contracts. These fields describe inputs to
+Combine this extension with all software, material, and evidence records in 6a
+into one cache artifact; this is an example relationship, not a YAML include or a
+second cache-input flag. Identical evidence digests occur once. The additional
+report and historical service responses above explain the completed admission;
+they cannot authorize a new nonce or report. Before executable fixture coverage,
+populate the full report, exact required encryption identity, and every dependency
+used by the production authorization constructor. Do not retain inference payloads
+or ephemeral secrets to demonstrate a successful E2EE check.
+
+The service's separate restricted `cache_state_dir` contains the authoritative
+state represented below. This is a distinct durable-state schema, not a second
+portable trust artifact. Its deployment and state identities must agree with the
+endpoint record. The binding digest covers the canonical complete persisted
+authorization, so replacing its report/identity/dependencies cannot reuse the entry.
+
+```yaml
+schema_version: 1
+kind: endpoint_persistence_state
+deployment_identity: "<deployment identity>"
+state_identity: "<deployment state identity>"
+revision: 12
+authorizations:
+- identity: "<durable authorization identity>"
+  authorization_digest: sha256:<canonical complete persisted authorization>
+  creation_revision: 12
+  state: active
+- identity: "<previous invalidated authorization identity>"
+  authorization_digest: sha256:<previous persisted authorization>
+  creation_revision: 10
+  state: invalidated
+  invalidated_at_revision: 11
+```
+
+An authoritative `active` entry is necessary, not sufficient: apply all Section 2c
+and 3c restoration checks, including current deployment/build/policy and scope.
+This file is never imported from a portable evidence bundle. Commit invalidation
+or eviction through the mandatory writer before later restoration can succeed;
+missing state is not an empty invalidation set. Restore only a matching committed
+pair after crash recovery. Policy/configuration rollout must protect both files
+against rollback. The illustrative ledger layout must retain these invariants
+when the implementation defines crash-safe storage and retention.
+
+The combined artifact and durable state satisfy the dependency layout required by
+the Section 2c and durable-state contracts once populated and verified. These fields describe inputs to
 the shared authorization constructor, not a bypass for report/key publication.
 The backend fingerprint remains evidence about the backend, never the gateway TLS
 peer. No consumable nonce pool, TLS connection, session ticket, or ephemeral secret
@@ -1968,68 +2781,107 @@ policy_state:
   revision: 1
   removed_decisions: []
 software:
-  - subject:
-      kind: compose
-      encoding: app_compose_json
-      digest: "sha256:<identical hypothetical compose bytes>"
-    evaluations:
-      - scope: {provider: nearcloud, tier: model, evidence_format: near}
-        verification:
-          context: {verifier_build: "sha256:<build>", policy: "sha256:<applicable cloud rules and decision>"}
-          evidence: ["sha256:<identical hypothetical compose bytes>"]
-          checks: {required_membership: pass, component_policy_coverage: pass}
-          evaluated_at: "2026-09-13T00:00:00Z"
-        components:
-          - role: container_image
-            artifact: {repository: example-org/worker, digest: "sha256:<worker image>"}
-            verification:
-              evidence: ["sha256:<worker provenance>"]
-              checks: {repository_policy: fail, signer_identity: pass, transparency: fail}
-              decisions: ["sha256:<canonical complete repository decision below>"]
-              exemptions:
-                - factor: build_transparency_log
-                  source: configured_allow_fail
-                  outcome: fail
-              evaluated_at: "2026-09-13T00:00:00Z"
-      - scope: {provider: neardirect, tier: model, evidence_format: near}
-        verification:
-          context: {verifier_build: "sha256:<build>", policy: "sha256:<applicable direct rules>"}
-          evidence: ["sha256:<identical hypothetical compose bytes>"]
-          checks: {required_membership: pass, component_policy_coverage: pass}
-          evaluated_at: "2026-09-13T00:00:00Z"
-        components:
-          - role: container_image
-            artifact: {repository: example-org/worker, digest: "sha256:<worker image>"}
-            verification:
-              evidence: ["sha256:<worker provenance>"]
-              checks: {repository_policy: pass, signer_identity: pass, transparency: pass}
-              decisions: []
-              exemptions: []
-              evaluated_at: "2026-09-13T00:00:00Z"
-operator_decisions:
-  - scope: {provider: nearcloud, tier: model, evidence_format: near}
-    kind: repository
-    subject: {repository: example-org/worker}
-    replaces_failure: repository_not_listed
-    action: pin_observed_value
-    observation:
-      context: {verifier_build: "sha256:<build>", policy: "sha256:<cloud base rules>"}
-      evidence: ["sha256:<fresh authenticated observation>"]
-      checks: {quote_signature: pass, nonce_binding: pass, repository_policy: fail}
-      evaluated_at: "2026-09-13T00:00:00Z"
-    reason: "Accept this repository under the existing signer and binding requirements."
-    decided_at: "2026-09-13T00:01:00Z"
-    risk_acknowledgements: []
-evidence:
-  - digest: "sha256:<identical hypothetical compose bytes>"
+- subject:
     kind: compose
-    payload_base64: "<complete original compose>"
-  - digest: "sha256:<worker provenance>"
-    kind: rekor_provenance
-    payload_base64: "<complete evidence evaluated under each consumer's distinct requirements>"
-  - digest: "sha256:<fresh authenticated observation>"
-    kind: endpoint_attestation
-    payload_base64: "<complete fresh quote, binding and observation evidence>"
+    encoding: app_compose_json
+    digest: sha256:<identical hypothetical compose bytes>
+  evaluations:
+  - scope:
+      provider: nearcloud
+      tier: model
+      evidence_format: near
+    verification:
+      context:
+        verifier_build: sha256:<build>
+        policy: sha256:<applicable cloud rules and decision>
+      evidence:
+      - sha256:<identical hypothetical compose bytes>
+      checks:
+        required_membership: pass
+        component_policy_coverage: pass
+      evaluated_at: '2026-09-13T00:00:00Z'
+    components:
+    - role: container_image
+      artifact:
+        repository: example-org/worker
+        digest: sha256:<worker image>
+      verification:
+        evidence:
+        - sha256:<worker provenance>
+        checks:
+          repository_policy: fail
+          signer_identity: pass
+          transparency: fail
+        decisions:
+        - sha256:<canonical complete repository decision below>
+        exemptions:
+        - factor: build_transparency_log
+          source: configured_allow_fail
+          outcome: fail
+        evaluated_at: '2026-09-13T00:00:00Z'
+  - scope:
+      provider: neardirect
+      tier: model
+      evidence_format: near
+    verification:
+      context:
+        verifier_build: sha256:<build>
+        policy: sha256:<applicable direct rules>
+      evidence:
+      - sha256:<identical hypothetical compose bytes>
+      checks:
+        required_membership: pass
+        component_policy_coverage: pass
+      evaluated_at: '2026-09-13T00:00:00Z'
+    components:
+    - role: container_image
+      artifact:
+        repository: example-org/worker
+        digest: sha256:<worker image>
+      verification:
+        evidence:
+        - sha256:<worker provenance>
+        checks:
+          repository_policy: pass
+          signer_identity: pass
+          transparency: pass
+        decisions: []
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+operator_decisions:
+- scope:
+    provider: nearcloud
+    tier: model
+    evidence_format: near
+  kind: repository
+  subject:
+    repository: example-org/worker
+  replaces_failure: repository_not_listed
+  action: pin_observed_value
+  observation:
+    context:
+      verifier_build: sha256:<build>
+      policy: sha256:<cloud base rules>
+    evidence:
+    - sha256:<fresh authenticated observation>
+    checks:
+      quote_signature: pass
+      nonce_binding: pass
+      repository_policy: fail
+    evaluated_at: '2026-09-13T00:00:00Z'
+  reason: Accept this repository under the existing signer and binding requirements.
+  decided_at: '2026-09-13T00:01:00Z'
+  risk_acknowledgements: []
+evidence:
+- digest: sha256:<identical hypothetical compose bytes>
+  kind: compose
+  payload_base64: "<complete original compose>"
+- digest: sha256:<worker provenance>
+  kind: rekor_provenance
+  payload_base64: "<complete evidence evaluated under each consumer's distinct requirements>"
+- digest: sha256:<fresh authenticated observation>
+  kind: endpoint_attestation
+  payload_base64: "<complete fresh quote, binding and observation evidence>"
 ```
 
 `decisions` uniformly contains canonical decision-record digests on verification
@@ -2037,6 +2889,165 @@ results and endpoint admission. Empty lists mean no decision was used. `exemptio
 records existing explicit policy exceptions; it is not a list of new decisions or
 successful checks. The effective-policy hash includes these dependencies. Every
 referenced decision and prerequisite must resolve before a result is reusable.
+
+### 6h. Tinfoil cloud: SEV router admission prefill
+
+This companion example includes the router release, its Sigstore trust dependencies,
+the applicable AMD VCEK, and CT metadata. It contains no backend model authorization.
+The certificate must match the fresh router report's chip, product, and TCB; a new
+chip or TCB can require another certificate. Embedded AMD signing chains require no
+retrieval. There is no TDX collateral, hardware registry, or GPU verdict for this
+illustrated SEV router scope.
+
+```yaml
+schema_version: 1
+software:
+- subject:
+    kind: release_set
+    digest: sha256:<canonical complete router SEV component set>
+    encoding: canonical_release_set_v1
+  evaluations:
+  - scope:
+      provider: tinfoil_v3_cloud
+      tier: gateway
+      evidence_format: tinfoil_v3
+    verification:
+      context:
+        verifier_build: sha256:<teep build>
+        policy: sha256:<Tinfoil cloud SEV effective policy>
+      checks:
+        required_membership: pass
+        component_policy_coverage: pass
+      exemptions: []
+      evaluated_at: '2026-09-13T00:00:00Z'
+    components:
+    - role: code_release
+      artifact:
+        repository: tinfoilsh/confidential-model-router
+        digest: sha256:<tinfoilsh/confidential-model-router release subject>
+      required_binding: sev_launch_measurement
+      verification:
+        dependencies:
+        - source: cache
+          subject:
+            kind: sigstore_trust_material
+            digest: sha256:<canonical Sigstore trust material set>
+            authority: sigstore_public_good
+        evidence:
+        - sha256:<tinfoilsh/confidential-model-router signed release>
+        checks:
+          release_signature: pass
+          signer_identity: pass
+          transparency: pass
+        exemptions: []
+        evaluated_at: '2026-09-13T00:00:00Z'
+verification_material:
+- subject:
+    kind: amd_vcek
+    digest: sha256:<AMD VCEK>
+    product: Genoa
+    hwid: "<chip HWID>"
+    tcb: "<complete certificate TCB extensions>"
+  inputs:
+    certificate: sha256:<AMD VCEK>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<amd_vcek applicable material policy>
+    dependencies:
+    - source: embedded
+      kind: certificate_chain
+      identity: sha256:<AMD Genoa signing chain in this build>
+    checks:
+      certificate_chain: pass
+      certificate_extensions: pass
+    eligibility:
+      basis: signed_evidence
+      recheck:
+      - validity
+      - applicable_revocation
+      - fresh_report_hwid_and_tcb
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: sigstore_trust_material
+    digest: sha256:<canonical Sigstore trust material set>
+    authority: sigstore_public_good
+  inputs:
+    timestamp: sha256:<Sigstore timestamp>
+    snapshot: sha256:<Sigstore snapshot>
+    targets: sha256:<Sigstore targets>
+    trusted_root: sha256:<Sigstore trusted_root>
+    root_chain:
+    - sha256:<Sigstore root>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<sigstore_trust_material applicable material policy>
+    dependencies:
+    - source: embedded
+      kind: tuf_bootstrap_root
+      identity: sha256:<Sigstore bootstrap root in this build>
+    checks:
+      tuf_signatures: pass
+      versions_and_target_hashes: pass
+    eligibility:
+      basis: signed_evidence
+      recheck:
+      - tuf_expiry
+      - rollback_and_root_rotation
+      - signer_and_log_policy
+    evaluated_at: '2026-09-13T00:00:00Z'
+- subject:
+    kind: ct_log_list
+    digest: sha256:<CT log list>
+    authority: chrome_ct_log_list
+  inputs:
+    log_list: sha256:<CT log list>
+  verification:
+    context:
+      verifier_build: sha256:<teep build>
+      policy: sha256:<ct_log_list applicable material policy>
+    dependencies:
+    - source: configured
+      kind: authenticated_origin
+      identity: "<configured CT log-list origin>"
+    checks:
+      origin_authentication: pass
+      log_list_structure: pass
+    eligibility:
+      basis: authenticated_retrieval
+      retrieved_at: '2026-09-13T00:00:00Z'
+      recheck:
+      - log_list_refresh_policy
+      - live_peer_certificate_and_scts
+    evaluated_at: '2026-09-13T00:00:00Z'
+operator_decisions: []
+evidence:
+- digest: sha256:<tinfoilsh/confidential-model-router signed release>
+  kind: sigstore_bundle
+  payload_base64: "<complete original router Sigstore bundle>"
+- digest: sha256:<AMD VCEK>
+  kind: x509_certificate
+  payload_base64: "<original VCEK DER certificate>"
+- digest: sha256:<Sigstore root>
+  kind: tuf_root
+  payload_base64: "<original signed TUF root metadata>"
+- digest: sha256:<Sigstore timestamp>
+  kind: tuf_timestamp
+  payload_base64: "<original signed TUF timestamp metadata>"
+- digest: sha256:<Sigstore snapshot>
+  kind: tuf_snapshot
+  payload_base64: "<original signed TUF snapshot metadata>"
+- digest: sha256:<Sigstore targets>
+  kind: tuf_targets
+  payload_base64: "<original signed TUF targets metadata>"
+- digest: sha256:<Sigstore trusted_root>
+  kind: sigstore_trusted_root
+  payload_base64: "<original trusted-root target bytes>"
+- digest: sha256:<CT log list>
+  kind: ct_log_list
+  payload_base64: "<original authenticated CT log-list JSON>"
+```
 
 ## 7. Storage, parsing, and concurrency
 
@@ -2161,7 +3172,8 @@ adding command-specific orchestration. Define evidence objects, verification rec
 verified subjects, operator decisions, and canonical identities,
 the list-based software/component layout, nested verification contexts, semantic
 selectors, content-addressed evidence, strict parsing, trusted import rules, and
-bounded storage. Share existing production
+bounded storage. Define typed material lookup, dependency resolution, eligibility,
+and extraction of issuer chains from captured HTTP headers. Share existing production
 verification functions; do not serialize structs as a substitute for designing the
 trust boundary. Test malformed input, forged result flags, dangling references,
 content mismatch, policy mismatch, exemption mismatch, and cross-provider isolation.
@@ -2175,7 +3187,9 @@ Build the ordinary cache command on shared collection/verification and snapshot
 export. Add disk import/prefill adapters, multi-provider targets, atomic merging, and
 read-only deployment mode. Start with image/compose verified subjects, signed measurement
 registries, AMD certificates, and Intel collateral. Define Proof of Cloud and NVIDIA
-reference-material contracts before extending portable reuse. Update the config and
+reference-material contracts before extending portable reuse. Include NVIDIA issuer
+keys, Sigstore TUF dependencies, and CT log lists through their existing owners; do
+not claim complete-example budgets until these adapters and freshness rules exist. Update the config and
 CLI migration and examples together. Test partial failure, complete image coverage,
 concurrent writers, bounded retrieval sharing, cancellation, and write failures.
 Use the common cache path resolver and strict loader in all three commands. Test
@@ -2222,10 +3236,16 @@ Keep the current runtime key-use lifetime and generation-safe invalidation. Cove
 NearCloud gateway/backend separation, NearDirect indexed routes, Tinfoil direct
 multiple authorities, and Tinfoil cloud router sharing with model-specific outcomes.
 Use TLS test servers and production cryptography for connection and encryption tests.
-Assert the request budgets in Section 4c, including local upgrade reevaluation with
+Assert the request budgets in Sections 4c and 4d, including local upgrade reevaluation with
 network access to cached software groups denied.
 For autocaching, measure the first live admission, then restart from the committed
 file and assert the same eligible retrieval savings as explicit preparation.
+Make all complete YAML examples executable fixture inputs with real signed bytes
+and explicit dependency graphs. Exercise header-delivered chains, shared Intel
+objects across tiers/providers, AMD HWID/TCB mismatch, NVIDIA key rotation, CT
+refresh, TUF root transitions/rollback, and diagnostic-versus-required retrieval.
+Deny network access to prepared groups for both same-build reuse and upgrade
+reevaluation. Count dependency-owned clients and reject ambient-cache dependence.
 Count background disk work separately; enabling autocaching must not introduce
 additional discovery, release polling, or verification network requests.
 Test one software subject with multiple consumer evaluations and two distinct
@@ -2329,7 +3349,8 @@ the implementation change that extends the process-exit boundary.
 ## 9. Maintained documentation and agent discovery
 
 Create a maintained `docs/cache/` reference directory alongside `docs/transport/`.
-The cache reference covers evidence persistence, operator decisions, command use,
+The cache reference covers evidence persistence, typed verification material and
+its freshness/dependency contracts, per-provider request budgets, operator decisions, command use,
 and deployment as well as transport integration. Organize files around the changes
 an agent needs to make, with a small entry point and focused contract documents.
 The paths below are planned files; add working links when the files are created.
@@ -2337,7 +3358,7 @@ The paths below are planned files; add working links when the files are created.
 | Document | Authoritative content |
 | --- | --- |
 | `docs/cache/README.md` | Entry point: purpose, terminology, architecture, both prefill levels, command/configuration reference, deployment modes, and links to detailed contracts and implementation entry points. |
-| `docs/cache/storage.md` | Typed-list schema, nested component verification contexts, software identity selectors, content-addressed evidence, operator decisions, and optional endpoint records; build/policy identity; validated import/prefill and immutable export; file integrity; atomic writes; concurrency; upgrade compatibility; restoration eligibility and durable invalidation storage. Include representative YAML for NearCloud, NearDirect, and both Tinfoil modes. |
+| `docs/cache/storage.md` | Typed-list schema, nested component verification contexts, software and typed verification-material selectors, explicit dependencies and admission eligibility, content-addressed evidence, operator decisions, and optional endpoint records; build/policy identity; validated import/prefill and immutable export; file integrity; atomic writes; concurrency; upgrade compatibility; restoration eligibility and durable invalidation storage. Include representative YAML for NearCloud, NearDirect, and both Tinfoil modes. |
 | `docs/cache/operator-decisions.md` | `--update-whitelist` interactive selection, proposal generation and explicit apply, exact subject scope, supported/unsupported and elevated-risk classes, acknowledgements, retained checks, diagnostics, decision deployment/removal, and interactions with existing policy controls. |
 | `docs/cache/testing.md` | Request-count methodology and scenario budgets, live/prefill equivalence, concurrency and persistence-failure coverage, commands to reproduce checks, and links to actual regression tests. |
 
