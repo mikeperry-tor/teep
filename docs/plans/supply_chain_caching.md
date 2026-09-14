@@ -535,8 +535,12 @@ selected for current admission. Authenticate their original signatures, nonce an
 subject relationships, and required evidence dependencies under the current
 implementation. The trusted policy artifact records the operator's reviewed choice
 and observation time; it is not a portable assertion that a verification check
-passed. Creation and apply must establish all class-specific prerequisites with
-fresh evidence. Do not require the historical quote to answer a new challenge or
+passed. Interactive collection and proposal apply establish all class-specific
+prerequisites through fresh shared evaluation. For ordinary decisions, check time
+eligibility when that evaluation completes; later human review or file-lock delay
+does not require the observation's tokens or collateral to remain current. The
+policy transaction still checks selected subjects, current policy compatibility,
+and its authority/revision precondition. Do not require the historical quote to answer a new challenge or
 the historical collateral, certificate, NRAS token, or PoC token to remain eligible
 for current admission. Expiry of that historical material alone does not expire an
 ordinary measurement decision. Never backdate a current verification or refresh
@@ -768,6 +772,18 @@ upstream APIs. They are implementation choices, not completed adapters.
 | Sigstore/TUF | `SigstoreVerifier.fetchAndVerifyAttestation` creates its own root client and calls `FetchTrustedRootWithOptions`. Inject the verified trust-material resolver and use the local metadata sequence in Section 6. The pinned lower-level API supports in-memory verification; the higher-level updater also owns disk cache and refresh behavior and is not a transparent YAML adapter. |
 | NVIDIA | `NVIDIAVerifier` owns JWKS entries, singleflight retrieval, creation times, capacity, and rotation retry. Add immutable import/export on that owner, preserving its one-hour eligibility and refresh throttling. Do not copy JWT result caches into a new report. |
 | CT | `tlsct.DefaultChecker` currently refers to a process-wide checker; normal and pinned clients attach it. Its log list has a 24-hour lifetime and a separate bootstrap HTTP client. Introduce checker dependency injection per service/command and pass it through normal, pinned, proxy, and dependency-client construction. Sharing one configured checker within that owner is sufficient; mutating the process global from cache import is not. Preserve the bootstrap client's existing WebPKI behavior and every live SCT check. |
+
+All three commands use the same admission service, typed verifiers, material
+owners, and production HTTP client factories. `teep cache` initiates ordinary
+collection through that service; it has no separate downloader, retry loop, or
+failure-throttling policy. Persistence receives immutable inputs only after their
+owning verifier validates them, subject to the successful-target export boundary.
+Unvalidated acquisition staging belongs to the verifier, never to the file writer.
+Retain the existing retrieval retries, shared verification, and terminal-failure
+cooldowns. Material coordination shares work and cancellation handling; it adds no
+cache-specific retry framework. Any additional cross-scope dependency throttling
+must be justified by a failing bounded request-count test and implemented in the
+shared material owner for all callers, not in cache orchestration.
 
 This includes two explicit ownership changes: shared evidence orchestration and
 per-owner CT injection. None of these dependencies currently supplies a complete
@@ -1651,6 +1667,20 @@ targets and exact proposals for review so later discovery cannot silently expand
 what is applied. Use the same per-target success and partial-failure rules as other
 multi-target cache runs. Do not print inference data or credentials.
 
+Interactive confirmation and proposal application use one policy-application
+implementation. Interactive review supplies the in-memory observation validated by
+shared collection; an untrusted proposal must first pass the shared current
+validation and fresh-evidence requirements below. Neither path adds a retrieval
+loop to keep evidence alive while waiting for a human or the file lock. Once an
+ordinary decision's observation evaluation completes successfully, its evidence is
+historical for policy authoring. Expiry during review has the same consequence as
+expiry after writing: later live admission needs currently eligible evidence, while
+the observation continues to explain the exact operator choice. Preserve original
+times and evidence; policy changes still require the prescribed renewed review.
+No persisted validation flag substitutes for proposal validation. Withdrawal-only
+operations require no collection. Elevated classes need their own explicit time
+conditions before enablement; they introduce no generic refresh scheduler.
+
 For each supported elevated-risk change, require a separate explicit acknowledgement
 that describes its concrete consequence and is bound to that selected decision.
 Do not require the operator to type internal risk-class names. Reject missing,
@@ -2519,6 +2549,18 @@ cache-file replacement. Disjoint provider updates preserve each other's objects
 unless capacity requires the documented collection procedure; collection must not
 delete evidence used by another retained subject.
 
+Directory sync means syncing the open parent directory after replacement so the
+new directory entry is durable, in addition to syncing the temporary file's data.
+Distinguish failure before rename from failure after successful rename. Before
+rename, report failure without claiming a replacement. If rename succeeds but
+parent-directory sync fails, return an error stating that replacement completed
+but durability could not be confirmed; identify the written artifact digest and
+policy authority/revision. Do not report that the original file is unchanged or
+that persistence succeeded. Do not restore older policy or blindly repeat a policy
+edit. A later operation rereads authoritative state under the normal lock and
+preconditions. Optional persistence reports the same uncertainty without changing
+an independently acquired authorization. No additional recovery protocol is needed.
+
 Use a fixed lock order: acquire the file transaction lock without a runtime mutex;
 load the authoritative artifact and policy revision; validate the immutable snapshot
 against that state; resolve additions/removals and collect references; write/sync the
@@ -2570,8 +2612,13 @@ Extract local candidate construction and validation from the proxy constructor s
 `cache`, `verify`, and `serve` all enforce the same key, binding, and route checks.
 The store still checks that the candidate matches its acquisition scope and rechecks
 NRAS admission time at publication. Shared construction creates no stored authorization.
-The command completion boundary checks transient admission eligibility too; policy
-additions cannot be justified by a candidate that fails required admission checks.
+Shared command evaluation checks transient admission eligibility when evaluation
+completes, before its observation is presented for review or passed to persistence.
+That completed observation may justify an ordinary policy decision after human
+review without keeping report-bound tokens alive. File writes and human review do
+not publish endpoint authorization or extend evidence validity. Every new live
+admission retains the runtime publication-time check; policy additions still need
+all required observation checks and effective-policy evaluation.
 Keep its report/key/identity representation and generation lifecycle independent of
 portable graphs. The evidence snapshot is transient, with bounded references into
 material owners; do not attach full raw evidence graphs to each authorization.
@@ -2768,6 +2815,10 @@ Test malformed/unknown input, aliases/cycles, forged checks, duplicate or ambigu
 selectors, dangling dependencies, content mismatch, unsupported approval fields, untrusted
 imports, size bounds, reference collection, symlinks, path substitution, permissions,
 concurrent disjoint writers, cancellation, write failure, and crash boundaries.
+Inject failure before rename and after rename at directory sync. Assert the
+reported replacement/durability outcome, visible artifact digest and policy state,
+and normal revision checks by subsequent readers and writers. A post-rename error
+must not trigger restoration of the old file or claim successful durability.
 Cover root-owned read-only deployment, effective-user-owned writable deployment,
 untrusted parent ownership/permissions, parent and lock substitution, hard-link
 aliases, symlink projections, and lock-inode stability across atomic replacement.
@@ -3076,6 +3127,14 @@ options and update help/configuration together. Retain measurement-policy input
 as base policy with its existing restrictive and precedence semantics. Add examples
 that distinguish configured restrictions from reviewed exceptions; no command
 automatically converts configured restrictions into additive decisions.
+
+Use the single policy-application implementation specified in Section 5b for
+interactive confirmation and proposal apply. Keep fresh retrieval in shared
+admission and check observation eligibility at evaluation completion. Test expiry
+during human review and lock waiting: ordinary decisions require no extra requests
+solely for that delay, and later live admission still checks current eligibility.
+A proposal's asserted prior success is never accepted as a validated observation.
+Test policy changes during review and cancellation without introducing a refresh loop.
 
 Implement policy authority/revision/state comparisons under the lock, explicit removal,
 newly reviewed reintroduction, and atomic eligible additions plus withdrawals. Bind
