@@ -145,6 +145,23 @@ prerequisite, not a missing provider migration or a reason to add alternate cach
 machinery. `tinfoil_v3_cloud` is unaffected by this issue and retains its live
 validation requirements. Cloud results do not establish direct-provider coverage.
 
+Define acceptance by the evidence shape the current production parser and policy
+actually support. The shared V3 parser currently accepts an empty `device_evidence`
+item list and rejects every nonempty list. This parser restriction applies to both
+aliases; it does not establish whether a particular live direct endpoint supplies
+GPU evidence. For the cloud SEV router, an empty device list describes the gateway,
+not the backend inference servers. Its acceptance must preserve the existing
+gateway-only guarantees and must not infer backend GPU verification.
+
+Use the supported cloud router shape for the complete Tinfoil portable scenario.
+Keep direct CPU/release, key/route, and transport tests at their stated test layers.
+A direct positive admission scenario requires a concrete supported response that
+satisfies unchanged effective policy; an empty list is not permission to waive
+required GPU checks. Nonempty V3 device evidence remains a rejection test until
+independent parser/verifier support is implemented in separate provider work. Do
+not assign a successful direct TDX/GPU request budget to an unsupported shape.
+Billing readiness and evidence-format readiness are separate live prerequisites.
+
 ### Implementation goal: prefill shared attestation state
 
 Implement both goals by sharing as much machinery as possible with the attestation
@@ -188,6 +205,25 @@ verifier establishes their authenticity, structure, subject relationships, and
 type-specific eligibility. A digest match or successful download is insufficient.
 Software export additionally requires the successful-target boundary in Section 5.
 Malformed or cryptographically invalid inputs never become reusable evidence.
+
+Getter adapters return staged inputs to the owning verifier before that verifier
+can finish; returning bytes is not promotion. Track exact original bodies, headers,
+and retrieval context in a bounded acquisition scope owned by the evaluation.
+The production typed verifier explicitly identifies which objects passed their
+required material checks. Promote only those immutable objects; failure, cancellation,
+or missing validation leaves the remaining objects unpromoted. An allowed factor
+failure cannot supply that validation. A getter must not recursively invoke the
+enclosing quote verifier to decide whether it may return an input.
+
+Concurrent evaluations may join a bounded in-flight acquisition and receive the
+same staged bytes, then each perform its own checks. This sharing grants no trust
+and does not make staging a reusable material cache. Completed unvalidated work has
+no retained cache entry; validated promotion follows the typed owner's rules. Keep
+acquisition-scope references separate from report formatting and authorization
+generations, and release them on completion. Test partial material success followed
+by quote failure, cancellation before promotion, and concurrent validation of shared
+staging. Complete software export still requires successful target admission.
+
 Authenticated TUF transitions and explicitly reviewed decision observations retain
 their separate validation boundaries; neither represents a passed software check.
 An `allow_fail` admission does not make the failed material check cache-eligible.
@@ -315,6 +351,18 @@ bytes must not merge signer, repository, tier, or decision requirements. The cur
 compose helper uses a digest-to-repository map; the cache coverage model must retain
 the full repository/digest relations instead of copying that lossy representation.
 Resolve ambiguous input or fail explicitly; do not silently choose the first policy.
+
+Complete membership requires replacing the current text/regex extraction, not only
+its digest-to-repository map. Use one bounded production parser for the supported
+compose forms and enumerate actual service image references. Define supported
+fields and syntax explicitly; return unknown fields to the owning caller. Preserve
+tag-only services as components with weaker binding, and do not count image-like
+strings in comments or unrelated values as deployed components. Reject malformed
+input, duplicate/ambiguous service definitions, and component-limit overflow instead
+of truncating enumeration. Never use the local environment to expand provider image
+references. Accept an expansion as a concrete image only when authenticated inputs
+determine its value; otherwise retain its unresolved binding classification and
+apply the corresponding enforced failure. Raw compose bytes remain the binding input.
 
 Derive required membership from the exact bound compose or supported authenticated
 release/measurement relationships, not every repository in a provider allowlist.
@@ -1088,7 +1136,7 @@ it does not imply that unavailable backend evidence becomes authenticated.
 | --- | --- | --- |
 | NearCloud (6a): one response, gateway/backend TDX, backend GPU | 23 + CT requests | 14 |
 | NearDirect: default selection with two discovery requests, TDX/GPU | 15 + CT requests | 10 |
-| Tinfoil direct: one discovery request, TDX/GPU | 14 + CT + TUF requests | 9 |
+| Tinfoil direct: supported CPU/release and transport test layers; full admission requires a supported concrete response and unchanged effective policy | Measure groups exercised by each layer; no successful TDX/GPU total asserted | Zero requests to eligible prepared groups; full-admission total remains unestablished |
 | Tinfoil cloud: fixed SEV router, no backend GPU evidence | 2 + CT + TUF requests | 1 |
 | Venice ACI/1 after migration: selected model, gateway TDX and relayed GPU | 13 + CT + any required diagnostic image requests | 8, conditional on diagnostic-query work |
 
@@ -1111,9 +1159,11 @@ The decompositions are:
   = 23 before CT. Full portable dependencies remove 9, leaving 14.
 - NearDirect: 2 discovery + 1 attestation + 4 Intel + 1 NRAS + 1 JWKS + 6 Proof of Cloud
   = 15 before CT. Full dependencies remove 5, leaving 10.
-- Tinfoil direct: 1 discovery + 1 attestation + 4 Intel + 1 NRAS + 1 JWKS + 6 Proof of
-  Cloud = 14 before CT/TUF. Full dependencies remove 5 plus required TUF retrievals, leaving 9. This remains source-only
-  until the direct live-validation prerequisite is satisfied.
+- Tinfoil direct: measure discovery, CPU collateral, release/TUF, and any applicable
+  report-bound work for the supported fixture or live response. The shared parser
+  cannot currently admit nonempty V3 device evidence, so no successful NRAS/JWKS
+  decomposition is assigned to that shape. Component and transport counts do not
+  establish a full-admission total; apply both prerequisites in Section 1.
 - Tinfoil cloud: 1 attestation + 1 VCEK = 2 before CT/TUF; matching VCEK and eligible TUF material leave 1.
   AMD signing chains are embedded. No backend validation is inferred.
 - Venice ACI/1: 1 attestation + 4 Intel + 1 NRAS + 1 JWKS + 6 Proof of Cloud = 13
@@ -1285,6 +1335,13 @@ behavior and cannot report complete live verification when its required probe fa
 An inference 429 may therefore leave valid cached software while making live `verify`
 fail. Shared checks must agree across commands; their completion criteria differ
 explicitly. Runtime publication and E2EE-usability promotion retain their existing separate checks.
+
+Deferring remote usability does not defer local key validation. Before software
+export or decision creation, shared admission must validate required key encoding,
+NEAR key conversion, and EHBP key agreement through the production cryptographic
+pathways, including rejection of low-order keys. It must also establish required
+REPORTDATA binding and route/transport-identity consistency. A present, correctly
+sized, attested key is not sufficient. These checks require no inference probe.
 
 ### Read-only policy validation with `teep verify`
 
@@ -1682,6 +1739,37 @@ observation. Preserve the actual selected observation and apply current eligibil
 Current policy and TUF state have their separate transaction rules. Sort output
 for review, with encoded evidence last; presentation order has no trust meaning.
 
+For mutable authenticated-retrieval material, retain one current observation per
+configured authority and material kind, separately from historical evidence bytes.
+The `verification_material` list contains at most one JWKS or CT record for each
+such selector. Superseded inputs needed by a decision remain in `evidence` and its
+historical references, not as additional selectable `verification_material` records.
+Select that observation before evaluating a token or certificate; never search older
+JWKS or CT lists for one that makes verification succeed. A successfully validated
+refresh supersedes the owner's previous observation, including removal of keys or
+logs. Concurrent refresh/import publication uses the owner's operation identity.
+Delayed work cannot restore a superseded observation.
+
+File merge selects the latest eligible authenticated retrieval observation by its
+original retrieval time, not by content digest or signature success. Apply the clock
+checks below before considering an incoming observation; an ineligible future time
+cannot supersede current state. Equal timestamps with different bytes are ambiguous
+and fail the merge. Identical bytes may have multiple genuine observations, but the
+selected time must belong to an actual authenticated retrieval. An older writer
+cannot replace the selected observation. This ordering relies on the deployment's
+clock discipline; retrieval times are not issuer-signed versions or proof of global
+publication order. Authorities with signed versions use their typed version rules.
+
+Keep the selected observation as the sole current candidate even after expiry;
+expiry requires authenticated refresh or failure, never selection of historical
+bytes. Protect the current observation and its bytes from capacity collection while
+eligible so a delayed writer cannot revive an earlier still-eligible version.
+After expiry, capacity collection may remove that material root entirely, causing
+a normal retrieval miss; historical observations cannot be promoted and expired
+incoming observations cannot populate a current root.
+Historical dependencies of decisions are not current material roots. Import and
+restart preserve this distinction without creating endpoint authorization epochs.
+
 Section 6a is the complete NearCloud structural example, covering separate model
 and gateway compose and shared dependencies. Its payload/digest placeholders are
 not deployable values: fixtures replace them with exact original bytes and computed
@@ -1793,13 +1881,42 @@ verifier is assumed. Scenario budgets remain in Section 4d.
 
 ### TUF trusted version state
 
+The verifier owns an immutable per-authority set of supported historical bootstrap
+anchors as well as its current bootstrap. An ordinary bootstrap advancement retains
+the historical anchors required to authenticate supported checkpoints; these anchors
+authenticate historical knowledge only and cannot make an old snapshot currently
+eligible. Identify anchors by exact root digest. Artifact references select an
+already supported anchor, never install a root supplied by YAML. Authenticate the
+consecutive forward chain from that anchor and check any overlap with the current
+bootstrap by exact content identity. Never attempt to authenticate an older root
+by running root updates backwards from a newer bootstrap.
+
+Current-material sessions start from the current bootstrap and honor restored
+rollback knowledge and authenticated key-rotation resets. If the retained root is
+newer, authenticate its forward transitions before selecting current material; if
+the build bootstrap is newer, reconcile the intervening authenticated transitions
+before resetting any role knowledge. Missing transitions require bounded retrieval
+outside the file lock or explicit failure, not checkpoint deletion. A complete
+retained chain permits local reconciliation without a new request.
+
+Withdrawal of a historical anchor is an explicit trust-policy change, not an
+incidental consequence of updating the bootstrap version. Unsupported or withdrawn
+historical dependencies fail with the authority and required anchor identified.
+Before rollout, the trusted preparation/deployment path must produce a checkpoint
+authenticated under supported anchors while preserving every applicable rollback
+bound, or complete the authenticated rotation that permits its reset. If that cannot
+be established, rollout remains blocked; do not clear state or recreate policy
+authority. Document retained anchors and withdrawals beside the verifier's roots.
+
 `trust_state` retains TUF rollback knowledge separately from reusable software.
 Each entry identifies the configured TUF authority and references its last accepted
 root, timestamp, snapshot, and targets/delegated-role metadata by evidence digest.
+Its `bootstrap_anchor` is the exact digest of the supported verifier-owned historical
+root that authenticates the retained chain; it grants no authority to file bytes.
 Role names are explicit on references. Derive versions and hashes from those signed
 bytes; do not accept unsigned version counters. The current verifier authenticates
-the root chain from its bootstrap and validates these associations. Policy revision
-is independent of TUF updates. Root is required; other roles are present only when
+the root chain from a supported verifier-owned anchor and validates these associations.
+Policy revision is independent of TUF updates. Root is required; other roles are present only when
 accepted and not reset by authenticated key rotation. A partial update can retain
 accepted roles from different update attempts: this records rollback knowledge,
 not a complete usable trust snapshot. Reuse still needs a mutually consistent,
@@ -1815,6 +1932,16 @@ rotation must apply the library's timestamp/snapshot-key reset rules; do not tak
 numeric maximum across different key epochs. Same-version conflicting content is
 an error, not a choice of the newer writer.
 
+Allow one active authenticated refresh per authority per service/command owner.
+Coalesce refresh callers through the shared bounded retrieval coordinator; one
+caller's cancellation does not cancel work needed by others. Admissions may evaluate
+immutable retained snapshots concurrently, with fresh local verification sessions.
+They do not each start a competing refresh. Keep network I/O outside the authority
+mutex and recheck the authoritative state before completing an evaluation. Imports
+and cross-process file writers still require transition reconciliation; this rule
+reduces in-process refresh races without weakening those checks. Reevaluation is
+bounded by the admission deadline and must not become an unbounded retry loop.
+
 The resolver's retained rollback knowledge is separate from each mutable
 `trustedmetadata.TrustedMetadata` session. The pinned API rejects root updates
 after timestamp loading and timestamp updates after snapshot loading. An expired
@@ -1824,7 +1951,8 @@ algorithm for a partial checkpoint, and a long-lived session is not the authorit
 store. Define and test the following restore/refresh boundary before the rest of
 the Phase 5a checkpoint implementation, before Phase 5b's current-material adapter:
 
-1. Authenticate the retained root chain from the current build's bootstrap.
+1. Authenticate the retained root chain from its supported verifier-owned historical
+   anchor and reconcile it with the current bootstrap under the rules above.
    Each retained role reference includes its authenticating root/key epoch and
    the parent metadata needed to establish its accepted signature, hash, and
    version relationships. Preserve these dependencies even when a later accepted
@@ -1856,6 +1984,33 @@ do not implement a second TUF signature verifier or silently drop historical rol
 to make a session load. File transactions use the same authenticated transition
 reconciliation without network I/O.
 
+Retain a minimal authenticated checkpoint, not an update history. Its roots are the
+last accepted root and applicable last accepted role metadata, including rollback
+bounds known from accepted parent metadata even when a child download failed.
+Retain each root's signature/hash/delegation dependencies and any separate metadata
+required by a currently usable snapshot or decision. After a reconciled transition,
+collect superseded objects only when this complete closure no longer needs them.
+Do not retain every timestamp or snapshot merely because it was once accepted.
+Do not drop an absent delegated role's rollback knowledge unless the library's
+authenticated transition rules permit that reset.
+
+Represent consecutive root transitions as an ordered, bounded list, not recursively
+nested records. Allow at most 256 root objects per authority, subject also to the
+artifact byte/record limits. This list has an explicit sequential-work bound; its
+length is not dependency depth. All other dependency traversal retains Section 7's
+depth bound. Start a retained chain at a later verifier-owned supported anchor only
+when every retained historical relationship and applicable rollback bound remains
+authenticated. Old contexts needed by decisions or partial checkpoints remain.
+
+If the minimal protected closure exceeds capacity, fail persistence with required
+bytes, records, root count, and limiting dependency identified. A bounded writer
+must not repeatedly retry an unchanged capacity failure. Recovery uses a trusted
+preparation run to remove explicitly selected decisions or replace superseded
+dependencies where safe. If irreducible state still exceeds limits, deploy a verifier
+with reviewed larger bounds or suitable supported anchors, then prepare and validate
+the replacement. Preserve policy authority/revision and all non-reset rollback bounds;
+file deletion, unsigned counters, and silently discarded history are not recovery.
+
 Ordinary `cache`, explicit policy apply, and `serve --autocache` merge accepted
 state under the file transaction lock. `verify`, proposal generation, and ordinary
 `serve` are read-only artifact consumers. Revalidate
@@ -1883,9 +2038,15 @@ Include acceptance of a new timestamp followed by snapshot-download failure,
 persistence, restart after timestamp expiry, and successful authenticated refresh
 that still rejects rollback of previously accepted delegated-role versions. Test
 two successive refreshes in one process, expiry while the owner remains alive,
-errors before versus after a trust transition, and competing sessions advancing
-the authority while an older material evaluation completes.
+errors before versus after a trust transition, and a refresh or import advancing
+the authority while an older material evaluation completes. Concurrent refresh
+requests must share one operation, including its failure and cancellation handling.
 Use the pinned library's trusted metadata rules in both local and live paths.
+Exercise thousands of timestamp/snapshot replacements and repeated partial failures;
+retained size must follow the necessary dependency closure rather than update count.
+Test root chains at and beyond the 256-object bound, anchor-based collection,
+delegated-role knowledge, restart, protected overflow, and recovery with unchanged
+policy authority and rollback bounds.
 
 ### 6a. Near cloud: complete evidence example
 
@@ -2177,7 +2338,9 @@ multiple documents, cycles, aliases, and ambiguous references. Initial implement
 limits are 64 MiB encoded file size, 48 MiB total decoded evidence, 16 MiB per decoded
 evidence object, 65,536 records, nesting depth 32, and dependency depth 16; lower
 existing kind-specific parser/network bounds still apply. Check bounds while reading
-and before allocating decoded payloads. These cover the sampled sub-MiB artifacts
+and before allocating decoded payloads. Consecutive TUF root transitions use the
+separate 256-object ordered-list bound in Section 6, not recursive dependency depth;
+their bytes and records still count against the artifact totals. These cover the sampled sub-MiB artifacts
 without promising unlimited model coverage; all-model selection remains supported,
 and an oversized explicit write fails with a size diagnostic rather than dropping
 policy or required evidence. Exercise the maximum allowed artifact and parallel
@@ -2261,6 +2424,8 @@ writes and autocache under the file transaction lock:
 
 1. Protect the authoritative policy state, every active decision and its complete
    supporting evidence, and all TUF rollback metadata and authentication dependencies.
+   Protect eligible current JWKS/CT observations and their bytes as specified in
+   Section 6; historical observations cannot replace these roots through collection.
    Also protect the complete successful software targets and material sets selected
    for this transaction. Protect their transitive dependencies, including required
    containment references. No collector may remove a protected dependency.
@@ -2340,12 +2505,23 @@ route resolution in existing immutable route APIs. Use three boundaries:
 
 These are responsibilities and proposed internal names, not new public CLI APIs.
 Keep the existing proxy authorization store as the sole runtime generation owner;
-it consumes the shared candidate and retains its constructor/publication checks.
+it consumes a shared validated candidate and retains its publication checks.
+Extract local candidate construction and validation from the proxy constructor so
+`cache`, `verify`, and `serve` all enforce the same key, binding, and route checks.
+The store still checks that the candidate matches its acquisition scope and rechecks
+NRAS admission time at publication. Shared construction creates no stored authorization.
+The command completion boundary checks transient admission eligibility too; policy
+additions cannot be justified by a candidate that fails required admission checks.
 Keep its report/key/identity representation and generation lifecycle independent of
 portable graphs. The evidence snapshot is transient, with bounded references into
 material owners; do not attach full raw evidence graphs to each authorization.
 Material retention and export use their own byte bounds and never require an
 endpoint generation. Collection or disk writes cannot rotate an HTTP/2 pool.
+Shared admission and material-retrieval coordination are useful independently of
+disk persistence and remain part of this refactor. Share transport factories and
+bounded retrieval coordination, but do not combine authorization generations,
+material freshness, TUF rollback state, and file transactions into a universal cache
+lifecycle. Their owners retain their distinct validation and synchronization rules.
 `verify` always calls fresh collection/evaluation and then its required probe, without
 acquiring proxy runtime authorization. `cache` uses the same collection/evaluation
 and exports after non-deferred checks. Serving promotes E2EE usability only for the
@@ -2458,17 +2634,22 @@ deterministic end-to-end execution. Current-time production rules remain unchang
 ### Phase 0: Permanent request accounting
 
 First establish the executable test-layer prerequisites above. Implement permanent
-counters and regression fixtures for the baseline in Sections 4b–4e; extend
-response-only captures to observe all actual attempts. Count all
-teep-owned and dependency-owned HTTP attempts, including retries, redirects, CT/TUF
-bootstrap and refresh, discovery, live attestation, NRAS, and Proof of Cloud.
+counters and regression fixtures for the baseline in Sections 4b–4e. Inventory and
+instrument every teep-owned and dependency-owned client construction path, including
+CT/TUF bootstrap and refresh, discovery, live attestation, NRAS, and Proof of Cloud.
 Separate preparation, pre-inference work, inference/probe requests, and TLS handshakes.
 Record provider, format, hardware scope, policy, and dependency-cache conditions.
 Implement and test the three-counter contract in Section 4b, including an internal
 transport retry that produces multiple attempts within one outer `RoundTrip`.
-Reconcile client and server observations for failures and cancellation; count proxy
-CONNECT overhead separately. No assertion may label outer-wrapper counts as all
-transport attempts without this coverage.
+Provide destination counters and network-denial controls for deterministic cached
+groups. These foundations are required before implementing reuse; exhaustive
+partial-write, HTTP/2 retry/cancellation, redirect, and HTTP/HTTPS proxy accounting
+tests may accompany the adapter/transport phases that exercise those paths. Track
+their required assertions in the test suite and testing reference, with explicit
+coverage limits. Count proxy CONNECT separately. Complete Section 4b coverage is
+required by Phase 8 before claiming comprehensive outbound or full scenario totals.
+No earlier result may label outer-wrapper counts as all transport attempts or use
+uncovered paths as proof of zero requests. Production retries remain enabled.
 
 Test successful service sequences and early failures separately; a shorter failure
 sequence is not a successful-admission budget. Provide deterministic counters and
@@ -2501,6 +2682,9 @@ stores, including after an admission permitted by `allow_fail`. Test two distinc
 admissions over identical evidence: retrieval is shared, but each runs local checks.
 Separately assert that acquired runtime authorization still avoids readmission.
 No new CLI is enabled in this phase.
+Test the shared candidate constructor through all consumers: low-order X25519 keys,
+invalid NEAR key conversion, missing required binding, and route/identity mismatch
+must fail without an inference probe. Preserve deferred remote usability separately.
 
 ### Phase 2: Portable artifact storage
 
@@ -2534,6 +2718,10 @@ those kinds. Test protected-data overflow, delayed writers reintroducing evidenc
 and size/peak-memory/write-cost measurements at the maximum supported artifact.
 Use supported production evidence representations for storage tests; new material
 kinds become usable only with their verified adapter. No command is enabled yet.
+Fuzz YAML decoding, embedded strict JSON, base64 sizing, and reference traversal.
+Include deeply nested input, aliases, duplicate fields, cycles, and near-limit
+payloads; reject structural/resource violations before unbounded parser allocation
+or traversal. Exercise bounds on parser structures as well as decoded evidence.
 
 ### Phase 3: NEAR software reuse
 
@@ -2543,6 +2731,9 @@ and backend verification. Share exact validated evidence across
 NearCloud/NearDirect without sharing endpoint authorization or consumer policy.
 Implement the required-versus-diagnostic retrieval classification in Section 4;
 never suppress an enforced factor because a saved record claims a check is not required.
+Replace regex membership extraction with the strict component parser specified in
+Section 2b-i, updating live and retained-input callers together. Do not retain the
+current silent 64-digest truncation or a malformed-JSON text fallback.
 
 Test complete membership, later-component signature failure, arbitrary replacement,
 list reordering, two versions of one repository, repository/digest aliasing, wrong
@@ -2554,6 +2745,11 @@ concurrent imports, and prefill racing publication or eviction. Deny provenance
 network access for eligible reuse and local upgrade reevaluation; assert remaining
 required queries and accurately report unrefreshed optional diagnostics. These tests
 complete the software portion of the NearCloud/NearDirect scenarios, not collateral budgets.
+Test mixed pinned/tag-only services, malformed manifests, duplicate service names,
+image strings in comments/environment values, unresolved variable references, and
+65 distinct images. Assert complete membership or an explicit bound/format failure.
+Fuzz component parsing and prove that local environment changes cannot change the
+membership or binding classification of identical authenticated compose bytes.
 
 ### Phase 3a: Supported NEAR software preparation and reuse
 
@@ -2612,6 +2808,10 @@ missing dependencies, invalid signatures, same-version conflicts, authenticated
 key rotation, concurrent transaction reconciliation, protected collection, and
 restart from committed versus read-only state. Demonstrate transition-on-error
 capture with the pinned library. This phase is one reviewable commit.
+Test advancing the embedded bootstrap with old-epoch roles, partial checkpoints,
+expired historical metadata, retained roots ahead of the bootstrap, missing forward
+transitions, and deliberate historical-anchor withdrawal. YAML cannot introduce an
+anchor, and an ordinary build update cannot silently erase rollback knowledge.
 
 ### Phase 5b: Current TUF evaluation and bounded refresh
 
@@ -2645,6 +2845,10 @@ denied. Count cold discovery separately and preserve router sharing and direct
 authority isolation. This commit completes the release portion of both Tinfoil
 scenarios; CT prefill follows in Phase 7. Phases 5a, 5b, and 5c together implement
 the complete [trusted version-state contract](#tuf-trusted-version-state).
+Use the supported empty-device-list cloud router fixture for complete admission
+coverage under its normal policy. Direct component tests must not fabricate GPU
+success. Test rejection of nonempty V3 device lists for both aliases until the
+production parser/verifier supports them; separate those failures from billing.
 
 ### Phase 6: NVIDIA key-material reuse
 
@@ -2668,6 +2872,9 @@ Test two independent admissions sharing retrieval, leader cancellation/timeout,
 waiter cancellation, failure delivered to all current waiters without duplicate
 retrieval, refresh racing import, and shutdown during fetch. Verify prompt waiter
 release, no post-shutdown publication, and unchanged unrelated authorizations.
+Test key removal with two still-eligible keysets, reversed import order, equal-time
+conflicting observations, a stale writer after refresh, and restart from merged
+state. A token accepted only by the superseded keyset must not cause its selection.
 
 ### Phase 7: CT metadata reuse
 
@@ -2690,10 +2897,15 @@ Test blocked retrieval with concurrent handshakes/direct checks, independent cal
 cancellation where a context is available, a shared failure without serial retries
 by queued waiters, timeout, shutdown, and refresh/import races. Verify that active
 unrelated HTTP/2 streams continue and no failed refresh becomes a successful CT check.
+Test superseded log lists with the same selection/merge cases as JWKS. Preserve
+existing certificate-check cache eligibility; historical list bytes cannot become
+current merely because a certificate fails evaluation against the selected list.
 
 ### Phase 8: Complete command capabilities and portable budgets
 
 Extend Phase 3a's commands to Tinfoil and all implemented portable material adapters.
+Complete the deferred Section 4b transport-accounting assertions from Phase 0 before
+publishing comprehensive request totals; identify any blocked live coverage separately.
 Reuse its path resolver, target handling, successful-target export, partial-failure
 reporting, and immutable loaded snapshots. Connect the established material adapters
 through shared services and the disk transaction layer; introduce no provider-specific
