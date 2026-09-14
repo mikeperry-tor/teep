@@ -360,9 +360,24 @@ tag-only services as components with weaker binding, and do not count image-like
 strings in comments or unrelated values as deployed components. Reject malformed
 input, duplicate/ambiguous service definitions, and component-limit overflow instead
 of truncating enumeration. Never use the local environment to expand provider image
-references. Accept an expansion as a concrete image only when authenticated inputs
-determine its value; otherwise retain its unresolved binding classification and
-apply the corresponding enforced failure. Raw compose bytes remain the binding input.
+references. For NEAR image expressions with an explicit literal digest-pinned
+default, authenticate the default repository/digest presented in the bound compose
+through the normal provenance policy. Record that it is the compose default, not
+proof that an override cannot select another running image. This preserves the
+existing NEAR coverage while exposing its provider-side deployment-binding gap;
+it requires no new operator decision or automatic policy edit. Do not execute
+pre-launch scripts or read override files to resolve an expression. Expressions
+without a supported literal default require authenticated resolution or the
+corresponding enforced failure. Raw compose bytes remain the binding input.
+
+The named NearCloud fixture uses `COMPOSE_MANAGER_IMAGE` with a digest-pinned
+default, and its pre-launch script can load a different value from an override
+file. Authenticate the presented default for this plan's scenarios, while retaining
+that distinction in component coverage and reports. At plan completion, document
+this existing gap in [dstack integrity](../attestation_gaps/dstack_integrity.md),
+including the override mechanism and the difference between authenticating the
+declared default and proving the image actually executed. Correct any claim there
+that compose authentication alone covers dynamically selected images.
 
 Derive required membership from the exact bound compose or supported authenticated
 release/measurement relationships, not every repository in a provider allowlist.
@@ -1377,6 +1392,43 @@ unification alone is not proof that the CLI uses them. Test equivalent effective
 outcomes across `cache`, `serve`, and `verify`, accounting for fresh admission versus
 permitted runtime reuse.
 
+### Capture and replay with portable inputs
+
+Preserve `verify --capture` and its successful-run replay self-check when evidence
+comes from portable or in-memory material. HTTP recording alone cannot capture
+inputs that required no request. Retain the exact loaded artifact snapshot in the
+capture, together with any additional consumed material not represented by recorded
+responses. Use the existing typed evidence encoding and shared acquisition owners;
+do not create a second verifier or synthesize HTTP exchanges for cache hits.
+Capture observation hooks retain inputs only and cannot promote them into trusted
+runtime material. Preserve original retrieval times, input associations, and the
+loaded-artifact digest separately from additional inputs collected during the run.
+
+Retain the relevant non-secret base-policy inputs and exact operator-decision
+context needed to reproduce the report, including unused-decision diagnostics.
+Never copy a configuration file containing credentials. Validate capture additions
+with strict parsing, digest/reference checks, and the same evidence resource bounds.
+Keep current cryptographic evaluation and the existing explicit replay clock/nonce
+semantics; recorded results are not verification inputs.
+
+Replay uses only its captured inputs and recorded responses, with unexpected
+retrieval denied. It must not load a default cache, consult current cache-path
+environment/configuration, or acquire missing material from ambient owner stores.
+Missing or altered capture dependencies fail explicitly. Capture policy and
+authenticated-retrieval observations reproduce a historical diagnostic run; they
+cannot install policy or authorize live admission. Capture directories remain
+ineligible as trusted portable-cache input.
+
+Deliver software capture/replay coverage with Phase 3a, extend it with each material
+adapter when consumed, and add decision-context coverage in Phase 9. Test successful
+warm-cache capture and its self-check, then replay after removal or replacement of
+the original artifact and changes to ambient cache selection. Cover inputs reused
+from memory across targets, dependency tampering, missing inputs, applied and unused
+decisions, and unchanged outbound request counts. No capture-only requests may be
+added to recover evidence already consumed locally.
+
+### Mixed-provider verification and deployment
+
 Cache-aware verification is a post-migration cache-enablement requirement for Chutes and Venice.
 Until migration, these providers use ordinary live verification without portable
 prefill. Validate the selected artifact, then determine applicability from each
@@ -2059,6 +2111,9 @@ NearCloud does not use TUF in this example, so `trust_state` is empty. The CT or
 must match the current checker configuration. The illustrative retrieval times do
 not make old material currently eligible. Fresh gateway/model binding, NRAS, PoC,
 and live TLS/E2EE work remain outside the portable file.
+The model's `compose-manager` entry identifies the authenticated literal default
+in its image expression. It does not establish the contents of a runtime override;
+preserve the NEAR deployment-binding limitation specified in Section 2b-i.
 
 ```yaml
 schema_version: 1
@@ -2504,6 +2559,11 @@ route resolution in existing immutable route APIs. Use three boundaries:
    through the typed material adapters. A report's display fields are not export input.
 
 These are responsibilities and proposed internal names, not new public CLI APIs.
+Phase 1 extracts live collection, evaluation, and validated candidate construction
+only. Introduce concrete portable snapshots, prefill, and export interfaces with
+the first typed adapters that consume them in Phase 3 and later material phases.
+Phase 2 supplies bounded storage primitives. Do not implement speculative adapter
+interfaces or an empty portable evidence hierarchy in the orchestration refactor.
 Keep the existing proxy authorization store as the sole runtime generation owner;
 it consumes a shared validated candidate and retains its publication checks.
 Extract local candidate construction and validation from the proxy constructor so
@@ -2574,7 +2634,8 @@ that needs them, with all existing callers and tests updated in that commit.
 
 | Milestone | First phase delivering the behavior |
 | --- | --- |
-| Internal shared prefill and export contracts | 1, with concrete portable storage in 2 and adapters in 3–7 |
+| Shared live admission and candidate construction | 1 |
+| Portable storage and concrete prefill/export | Storage in 2; interfaces with their first adapters in 3–7 |
 | Goal 1, first supported delivery: NEAR software preparation/reuse through all three commands | 3a |
 | Goal 1, complete initial provider/dependency scope and portable budgets | 8 |
 | Consumption of exact operator decisions through shared effective policy | 9 |
@@ -2663,24 +2724,24 @@ Establish extracted-byte and component parity without assuming different capture
 share quotes, nonces, TLS identities, or complete compose bytes. This phase changes
 no caching, policy, command, or admission behavior.
 
-### Phase 1: Shared admission interfaces
+### Phase 1: Shared live admission
 
-Implement the shared admission boundaries and ownership specified above, including
-source-independent collection, evaluation, immutable snapshots, and validated prefill.
+Extract shared live collection, evaluation, and validated candidate construction
+from the existing orchestration, with immutable candidate results.
 Connect existing Near/Tinfoil live serving and ordinary live `verify` to the shared
 services. Keep provider scope, key-use lifetime, report/key publication, admission-time
 checks, bounded verification ownership, and generation-safe invalidation there.
-Define the adapter boundary for original inputs and verifier-owned dependency stores;
+Keep the existing authorization store's publication and generation ownership;
 do not create a second authorization store or build trust from display reports.
+Limit this phase to interfaces required by existing live callers. Concrete portable
+graphs, prefill/export, staging/promotion, and new material coordination belong to
+the first adapter phases that need them, rather than this refactor.
 
 Test unchanged live outcomes, complete report/key/identity publication, required
 NRAS admission-time checks, cancellation isolation, eviction, replacement races,
-and unrelated HTTP/2 streams. Test prefill/publication ownership through the actual
-shared services using verified in-memory inputs; disk encoding belongs to Phase 2.
-Assert that malformed, unauthenticated, or failed material stays outside reusable
-stores, including after an admission permitted by `allow_fail`. Test two distinct
-admissions over identical evidence: retrieval is shared, but each runs local checks.
-Separately assert that acquired runtime authorization still avoids readmission.
+and unrelated HTTP/2 streams. Preserve existing capture/replay behavior and verify
+that acquired runtime authorization still avoids readmission. Two distinct fresh
+admissions must still run their required checks; this phase adds no material cache.
 No new CLI is enabled in this phase.
 Test the shared candidate constructor through all consumers: low-order X25519 keys,
 invalid NEAR key conversion, missing required binding, and route/identity mismatch
@@ -2689,10 +2750,11 @@ must fail without an inference probe. Preserve deferred remote usability separat
 ### Phase 2: Portable artifact storage
 
 Implement strict decoding, canonical software/material identities, explicit
-dependency resolution, validated evidence import, immutable export,
-and bounded reference-aware storage. Define the typed-list envelope and supported-kind
-dispatch used by later adapters. Include the empty policy-state contract; nonempty
-operator policy remains unsupported until Phase 9.
+dependency resolution, immutable storage snapshots, and bounded reference-aware
+storage. Storage validation cannot promote inputs into runtime material; concrete
+typed admission import/export arrives with the owning adapters. Define the typed-list
+envelope and supported-kind dispatch used by later adapters. Include the empty
+policy-state contract; nonempty operator policy remains unsupported until Phase 9.
 
 Implement secure file access and the cross-process read/validate/merge/write transaction:
 separate stable lock file, restrictive temporary files, fsync, atomic replacement,
@@ -2726,14 +2788,25 @@ or traversal. Exercise bounds on parser structures as well as decoded evidence.
 ### Phase 3: NEAR software reuse
 
 Implement compose and component export/prefill through the shared supply-chain
-verifier. Preserve original stapled envelope relationships and independent gateway
-and backend verification. Share exact validated evidence across
-NearCloud/NearDirect without sharing endpoint authorization or consumer policy.
+verifier. Introduce the concrete input, staging/promotion, and portable snapshot
+interfaces needed by this first adapter. Later adapters extend these boundaries
+only where their typed requirements need it. Preserve original stapled envelope
+relationships and independent gateway and backend verification. Share exact validated
+evidence across NearCloud/NearDirect without sharing endpoint authorization or
+consumer policy.
 Implement the required-versus-diagnostic retrieval classification in Section 4;
 never suppress an enforced factor because a saved record claims a check is not required.
 Replace regex membership extraction with the strict component parser specified in
 Section 2b-i, updating live and retained-input callers together. Do not retain the
 current silent 64-digest truncation or a malformed-JSON text fallback.
+
+Test prefill/publication ownership through the shared services. Malformed,
+unauthenticated, and failed material must stay outside reusable stores, including
+after admission permitted by `allow_fail`. Two distinct admissions sharing the
+same evidence share eligible retrievals but each runs its required local checks.
+Acquired runtime authorization continues to avoid readmission. Add the bounded
+retrieval coordinator only when a concrete acquisition path requires it, preserving
+the authorization store as the sole owner of runtime generations.
 
 Test complete membership, later-component signature failure, arbitrary replacement,
 list reordering, two versions of one repository, repository/digest aliasing, wrong
@@ -2750,6 +2823,10 @@ image strings in comments/environment values, unresolved variable references, an
 65 distinct images. Assert complete membership or an explicit bound/format failure.
 Fuzz component parsing and prove that local environment changes cannot change the
 membership or binding classification of identical authenticated compose bytes.
+Use the named NEAR capture to test authentication of the literal default in
+`COMPOSE_MANAGER_IMAGE` while retaining the runtime-override gap. Assert that
+default-image provenance success does not claim authentication of override contents,
+and that no script execution or local environment lookup occurs.
 
 ### Phase 3a: Supported NEAR software preparation and reuse
 
@@ -2776,6 +2853,8 @@ necessary live groups remain available. Prove command enforcement equivalence th
 the established test layers, and report preparation cost separately from serving
 cost. This commit delivers an independently usable request-reduction milestone;
 it does not claim complete collateral budgets or Tinfoil cache support.
+Implement the Section 5 capture/replay contract for software inputs in this commit,
+including successful capture self-check and replay without the source cache file.
 
 ### Phase 4: CPU collateral reuse
 
@@ -2981,6 +3060,9 @@ MRSEAM failing together, and two component failures with only one excepted subje
 Assert agreement between blocking, authorization publication, CLI status, report
 totals, and dashboard output. Race-test independent report clones containing nested
 failure/disposition data. No authoring workflow may expose incomplete failure sets.
+Extend capture/replay tests to applied and unused operator decisions and their
+observation dependencies. Replay must reproduce the captured policy context after
+the live cache changes, without installing that context as live admission policy.
 
 ### Phase 10: Whitelist editing and policy transactions
 
@@ -3163,10 +3245,10 @@ must identify migration blockers rather than suggesting incomplete cache support
 | Phase | Documentation delivered or updated in the same commit |
 | --- | --- |
 | 0 | Establish `docs/cache/README.md` and `testing.md`, reproducible counting methodology, fixture links, and AGENTS.md discovery links. |
-| 1 | Document shared service ownership and actual interfaces; cross-reference the transport contracts for scope, lifetime, publication, and invalidation. |
+| 1 | Document shared live collection/evaluation and candidate construction; cross-reference transport ownership, lifetime, publication, and invalidation. Defer portable interfaces to concrete adapters. |
 | 2 | Create/update `storage.md` for strict evidence schema, identities, dependency resolution, rejected approval fields, trusted imports, bounds, and secure transactions. |
-| 3 | Document NEAR software sharing, independent consumer evaluations, envelope handling, component completeness, and diagnostic retrieval behavior in storage/testing and provider references. |
-| 3a | Publish supported NEAR software-only cache/serve/verify use, common path resolution, `--no-cache`, mixed-provider behavior, partial failures, and exact software request savings. State remaining live dependency work and unavailable capabilities. |
+| 3 | Document concrete prefill/export interfaces, NEAR software sharing, independent consumer evaluations, envelope handling, component completeness, literal-default authentication and its override limitation, and diagnostic retrieval behavior. |
+| 3a | Publish supported NEAR software-only cache/serve/verify use, common path resolution, `--no-cache`, capture/replay inputs and isolation, mixed-provider behavior, partial failures, and exact software request savings. State remaining live dependency work and unavailable capabilities. |
 | 4 | Document Intel/AMD material applicability, header-delivered dependencies, freshness/revocation rules, sharing, and regression tests. |
 | 5a | Document authenticated historical TUF checkpoints, partial transitions, key epochs, reconciliation, protected dependencies, and restart limits. |
 | 5b | Document current TUF eligibility, bounded refresh, request counts, concurrent transitions, and isolation from ambient caches. |
@@ -3185,6 +3267,10 @@ examples match the implemented schema and flags, and each shared rule has one
 authoritative home. Verify that the cache and transport descriptions agree on
 fresh admission after restart, lifetime, and invalidation. Keep measured run output in test artifacts;
 the maintained docs describe contracts, methodology, and supported behavior.
+
+At implementation completion, add the existing NEAR compose-default/runtime-override
+gap to [dstack integrity](../attestation_gaps/dstack_integrity.md), as specified in
+Section 2b-i, and align its image-authentication claims with that limitation.
 
 At implementation completion, mark this plan as completed design context and link
 to the maintained cache and transport entry points. Those references must be
