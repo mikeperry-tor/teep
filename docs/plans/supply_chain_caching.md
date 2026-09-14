@@ -8,8 +8,8 @@
    reusable evidence, distribute it to replicas, and evaluate it locally with the
    current verifier and policy on every new admission, including after updates. Specify
    the remaining requests for discovery, fresh endpoint admission, report-bound
-   services, and missing or ineligible collateral. Measure request reduction and
-   time until inference can begin; do not equate HTTP/2 connection reuse with fewer
+   services, and missing or ineligible collateral. Measure request reduction;
+   do not equate HTTP/2 connection reuse with fewer
    HTTP requests. See [request accounting](#4b-request-reduction-and-elimination).
 2. **Provide an optional operator decision path to pin observed evidence despite
    policy violations.** `teep cache --update-whitelist` records exact TOFU pins or
@@ -428,6 +428,22 @@ portable assertion that prerequisite verification passed. A subject admitted sol
 to `operator_decisions`, not to a fabricated signature-verification result. Endpoint
 authorizations can reference both verified subjects and applicable operator decisions.
 
+Represent each factor's complete base failures as typed reasons with their exact
+subjects. Evaluate every applicable reason; do not return after the first failed
+measurement or component check. Record the disposition of each reason separately:
+unresolved, permitted by the existing factor-wide `allow_fail`, or covered by an
+applicable exact decision. A decision covers only its matching reason and subject;
+it cannot change the factor's `Enforced` setting or hide another failure. Keep base
+check status distinct from effective admission permission, and never turn an
+excepted base failure into `Pass`.
+
+Use one authoritative calculation of unresolved enforced failures for `Blocked()`,
+authorization construction, CLI exit status, report totals, and dashboard output.
+Update all of those consumers in the same change. Preserve separate counts and
+diagnostics for base failures, factor-wide allowances, exact decisions, and remaining
+blocking failures. Deep-copy any nested reason/disposition collections when cloning
+published reports; callers must not mutate another request's policy result.
+
 Effective policy identity identifies the policy tested in reports and proposals;
 it is not a verification-result cache key. Hash the complete applicable provider/
 tier base policy, trust roots, required checks, exemptions, and active decisions.
@@ -450,6 +466,30 @@ key. There is no executable-hash reuse protocol: persisted evidence is always
 evaluated by the running implementation. Proposal application reruns current checks
 and confirms the exact reviewed subject, failure, prerequisites, and applicable
 policy; a printed build identifier never replaces that evaluation.
+
+Decision observations have a historical validation purpose distinct from material
+selected for current admission. Authenticate their original signatures, nonce and
+subject relationships, and required evidence dependencies under the current
+implementation. The trusted policy artifact records the operator's reviewed choice
+and observation time; it is not a portable assertion that a verification check
+passed. Creation and apply must establish all class-specific prerequisites with
+fresh evidence. Do not require the historical quote to answer a new challenge or
+the historical collateral, certificate, NRAS token, or PoC token to remain eligible
+for current admission. Expiry of that historical material alone does not expire an
+ordinary measurement decision. Never backdate a current verification or refresh
+historical timestamps to achieve this distinction.
+
+Each decision kind must specify the original signature/binding relationships its
+observation retains, the creation-time conditions recorded through the trusted
+policy transaction, and the prerequisites that fresh admission must establish
+again. Reuse matches the exact selected subject against fresh authenticated evidence
+and runs every current prerequisite not explicitly replaced by that decision.
+Historical material cannot satisfy current freshness or revocation checks. Invalid
+historical signatures or relationships, missing required observation dependencies,
+and currently prohibited decisions fail validation; an old observation never
+overrides a new hard restriction. Use historical authentication helpers owned by
+the production verifier, with no alternate signature implementation or generic
+ignore-expiry option on current admission.
 
 The shared evaluators must apply these requirements on each new admission:
 
@@ -476,6 +516,24 @@ existing decisions for explicit removal, including in proposals; removal does no
 require current provider evidence or successful admission. A restrictive withdrawal
 must remain possible during an outage. Its report identifies affected targets even
 when they no longer pass. Additions still require the admission rules below.
+
+Separate strict structural decoding from permission to consume a decision. A
+withdrawal-only operation can identify and remove a structurally valid decision
+whose known kind or scope the current policy now prohibits. It authenticates the
+trusted file, validates the schema, references, and decision identities, and checks
+the normal policy transaction precondition; it does not treat the prohibited
+decision as admission permission or require fresh provider evidence. Every retained
+decision must be supported for consumption before committing the replacement, so
+the operator must remove all prohibited decisions in that transaction. Serving,
+verification, additions, and ordinary evidence writes still reject prohibited
+decision consumption.
+
+This removal path does not accept unknown schemas, unknown kinds/fields, malformed
+records, or invalid evidence relationships, and does not preserve obsolete schemas
+or verifier behavior. If the current parser cannot safely identify a record, fail
+without modifying it. Recovery then requires the trusted deployment system to
+supply a valid replacement preserving established policy authority and revision
+continuity; deletion and revision-zero recreation are not recovery procedures.
 
 The artifact contains `policy_state` with a stable deployment-policy authority and
 monotonic revision. The first artifact writer creates an opaque authority with
@@ -686,6 +744,23 @@ do not satisfy the shared-work contract. Phases 6 and 7 must replace those behav
   and socket budgets. No material refresh failure invalidates unrelated authorization
   or authorizes inference replay.
 
+Factor identical retrieval coordination into a small internal helper shared by
+material owners. It owns only bounded active operations, lifecycle-derived timeout
+contexts, independently cancellable waits, immutable completion delivery, and
+shutdown. Owners supply exact operation keys and acquisition functions; they retain
+typed validation, retention, refresh throttling, operation reconciliation, and
+publication policy. Preserve typed capacity/trust errors without adding retry policy
+to the helper. Introduce it with the first concrete adapter that needs it and reuse
+it for NVIDIA and CT; avoid separate implementations of the same waiter lifecycle.
+Test cancellation, shared failure, bounded capacity, and shutdown once at that helper,
+then test each owner's validation and publication races through its production path.
+
+This is not a generic trust or generation store. The existing proxy authorization
+store remains the sole runtime authorization owner; do not move its acquisition,
+invalidation, E2EE promotion, or HTTP/2 pool semantics into material coordination.
+Keep the proposed `internal/admission` service as the common collection/evaluation
+boundary for proxy and commands, with typed material owners below it.
+
 ### Chutes support after transport migration
 
 Chutes is a planned extension for measurement decisions and portable verification
@@ -859,6 +934,24 @@ Include library-owned clients, Sigstore TUF bootstrap/refresh, NVIDIA JWKS, and 
 metadata retrieval if triggered. Do not infer zero network activity from a cache hit
 in only the application-level verifier.
 
+Keep three separate counters: logical calls into the HTTP transport, transport
+attempts (including retries inside one `RoundTrip`), and requests observed by the
+destination test server. `tlsct.WrapCounting` supplies the first only; it cannot
+establish the second. Instrument transport attempts with request trace events and
+protocol-level observations where necessary, and reconcile them with deterministic
+server counters. Record attempts that fail or are cancelled before transmission
+separately from transmitted requests. Define the start event and terminal outcome
+for each counter in the test helper so partial writes are not counted as completed
+requests. Do not disable production retries to make the counters agree.
+
+Count redirects and library retries at their actual attempt boundaries. Report
+proxy CONNECT requests separately from origin HTTP requests and TLS handshakes;
+retain this proxy overhead in total outbound HTTP accounting without adding it to
+provider-service budgets. A cancelled request may have reached the server, so
+response captures alone cannot prove its absence. Prove instrumentation coverage
+with reused-connection failures, HTTP/2 retry cases, partial writes, cancellation,
+redirects where allowed, and HTTP/HTTPS proxy paths before asserting complete counts.
+
 The following is a source-derived request inventory, not a measured benchmark.
 Counts describe successful first-attempt paths; dependencies, input size, cache
 state, early failures, and retries can change totals. Chutes and Venice targets
@@ -954,10 +1047,11 @@ not just metadata presence, when claiming request elimination.
 Do not weaken enforcement or replace cryptography with success mocks for benchmarks.
 
 Measure request attempts by destination and purpose, bytes fetched, cache hits,
-local reevaluations, handshakes, and time from inbound inference request to the first
-upstream inference request. Report total first-response latency separately. For
-repeatable timing runs report sample count and median/p95, separating cold and warm
-dependency caches. Keep fixture counts as assertions; live counts are observations
+local reevaluations, and handshakes, separating cold and warm dependency caches.
+Latency targets and timing benchmarks are not goals or acceptance criteria of this
+plan: network conditions, proxy use, and deployment conditions vary. Bounded operation
+deadlines remain correctness/resource limits, not performance targets.
+Keep fixture counts as assertions; live counts are observations
 with provider/model, build/policy, date, and dependency-cache conditions recorded.
 Use the existing live-test opt-in. Store measurements in test artifacts, not a
 running validation log in this plan.
@@ -980,7 +1074,9 @@ These are conditional, source-derived successful first-attempt budgets for one
 selected route, not measured cache-implementation results. Assume matching software,
 hardware-scoped collateral, policy, eligible trust metadata, and the GPU evidence
 shown. Count all teep-owned and library-owned HTTP requests, excluding the inference
-request itself. Complete portable prefill targets zero software, collateral,
+request itself and separately reported proxy CONNECT overhead. These are origin
+service budgets; Section 4b's total outbound accounting includes proxy overhead.
+Complete portable prefill targets zero software, collateral,
 JWKS, TUF, and CT metadata retrievals. TLS handshakes and local checks still occur.
 `verify` adds its required live probe and always performs fresh admission. All
 process restarts use the portable-prefill columns, including same-build restarts.
@@ -1085,20 +1181,20 @@ No inference exchanges, credentials, consumable nonces, or private keys were imp
 | Venice ACI/1 | 23 | 313,948 | 421,614 |
 
 These establish representative byte costs and the need for header preservation;
-they are evidence-only research artifacts, not completed cache-loader fixtures or
-benchmarks of startup latency. TUF and CT material are absent from these captures
+they are evidence-only research artifacts, not completed cache-loader fixtures.
+TUF and CT material are absent from these captures
 and must come from their authenticated acquisition paths. Build executable scenario fixtures by extracting the actual original compose strings, complete Rekor responses,
 and typed CPU collateral from these fixtures; never accept historical bytes without current verification (using an explicit
-clock only in replay tests). Keep live elapsed-time reports
-separate from deterministic request-count acceptance.
+clock only in replay tests). Keep live request-count observations separate from
+deterministic request-count acceptance.
 
 A separate local prototype used the pinned go-tuf/Sigstore libraries on authenticated
 public repository metadata: bootstrap root 14, signed transition to root 15,
 timestamp 782, snapshot 165, targets 14, and the hash-verified `trusted_root.json`
 target. The `trustedmetadata` update sequence and Sigstore root parser completed
-locally in approximately 5 ms in one run without constructing a network client.
-This demonstrates API feasibility, not a performance guarantee, proof of latest
-metadata, or full offline Tinfoil admission. Retain root transitions in the examples:
+locally without constructing a network client.
+This demonstrates API feasibility, not proof of latest
+metadata or full offline Tinfoil admission. Retain root transitions in the examples:
 the pinned bootstrap root alone was expired at the research date, while the verified
 successor was eligible. Production uses current time and actual metadata versions.
 
@@ -1225,12 +1321,24 @@ outcomes across `cache`, `serve`, and `verify`, accounting for fresh admission v
 permitted runtime reuse.
 
 Cache-aware verification is a post-migration cache-enablement requirement for Chutes and Venice.
-Until migration, reject cache-backed verification of those providers explicitly;
-ordinary live verification retains its existing behavior. For an implicit default
-file containing only unrelated provider data, validate the file but report that no
-cache capabilities apply to the unsupported target and proceed with ordinary live
-verification. If relevant records exist, or a candidate file was explicitly selected
-by flag/environment/configuration, reject unsupported cache-backed verification.
+Until migration, these providers use ordinary live verification without portable
+prefill. Validate the selected artifact, then determine applicability from each
+target's policy and implemented capabilities, independently of whether the path
+came from a flag, environment, configuration, or implicit default. Unrelated policy
+and provider-independent evidence bytes do not require an unsupported provider to
+consume cache material. Report that the target used ordinary live verification and
+that its cache capabilities were not validated; do not claim cache-rollout coverage
+for it. Never apply cached decisions through a legacy verification adapter.
+
+If an active decision's declared scope could apply to the selected unsupported
+target, reject that target explicitly because its decision evaluator is unavailable.
+Do not assume the decision would be unused merely because no current subject has
+been fetched. In `serve`, check this condition for all active routes at startup and
+reject startup with the affected providers/scopes before accepting requests. A
+mixed-provider server with cache material for supported providers and no applicable
+unsupported policy starts normally; unsupported routes retain their live behavior.
+In `verify`, report target-specific failures with the normal nonzero aggregate
+status. Explicit file selection never changes these applicability rules.
 `verify --no-cache` provides an explicit baseline path even when a default exists;
 it reads no cache, applies no cache decisions, and must not claim rollout validation.
 PhalaCloud and NanoGPT remain outside cache scope. Apply the same relevance rules to
@@ -1460,6 +1568,17 @@ risk acknowledgement fields for review; leave selections and acknowledgements un
 Retain or package the referenced original evidence so apply can validate it. A
 proposal is untrusted input, not an authorization or a loadable cache file.
 
+Validate `--proposal-out` before collection. Reject a destination that collides with
+the resolved cache, its stable transaction-lock file, or any loaded configuration
+file. Compare normalized destinations through safely opened parent directories and
+existing file identities, not only argument strings; cover relative paths, hard
+links, and symlinks. Reject an existing proposal destination rather than overwrite
+it. Use the secure directory/file contract in Section 7, restrictive temporary
+files, and atomic publication that fails if the destination already exists. A
+competing creator must cause failure, never truncation. Sync successful publication
+and report write failures. Proposal generation cannot replace a cache or policy
+input even when the operator gives both options the same path.
+
 Include exactly one transaction precondition: existing policy authority/revision/
 state digest, or `artifact_precondition: absent` for first use as defined in
 Section 2e. Reject mixed or incomplete preconditions. A first-use proposal can be
@@ -1473,6 +1592,10 @@ the current implementation.
 Fetch fresh evidence where required; if a subject or relevant failure differs, reject
 that selection and require a new proposal. Never substitute newly observed values,
 expand selection to additional failures, or accept a stale verification-result flag.
+Keep the reviewed historical observation and fresh apply evidence distinct. A new
+nonce, quote signature, or eligible collateral version alone is not a changed
+decision subject. Compare the reviewed selected values, scope, relevant failures,
+and policy; validate the new evidence's own binding and current prerequisites.
 The reviewed proposal supplies the resolved targets, including those collected by
 `--all-models`; apply does not rediscover or add models. Reject conflicting target flags.
 Noninteractive invocation without proposal generation or explicit apply fails with
@@ -1699,7 +1822,7 @@ timestamp prevents snapshot loading; a newer timestamp can also reject an older
 snapshot's hashes. Therefore the usable-snapshot sequence above is not the restore
 algorithm for a partial checkpoint, and a long-lived session is not the authority
 store. Define and test the following restore/refresh boundary before the rest of
-the Phase 5 adapter:
+the Phase 5a checkpoint implementation, before Phase 5b's current-material adapter:
 
 1. Authenticate the retained root chain from the current build's bootstrap.
    Each retained role reference includes its authenticating root/key epoch and
@@ -2058,7 +2181,7 @@ and before allocating decoded payloads. These cover the sampled sub-MiB artifact
 without promising unlimited model coverage; all-model selection remains supported,
 and an oversized explicit write fails with a size diagnostic rather than dropping
 policy or required evidence. Exercise the maximum allowed artifact and parallel
-loads in storage tests; do not claim startup latency from file size alone. Bound file size,
+loads in storage tests. Bound file size,
 object count, decoded payload size, nesting, and reference traversal. Dispatch
 evidence kinds explicitly; reject unsupported kinds. Parse embedded JSON through
 `internal/jsonstrict`. Low-level parsers return unknown field names to the caller.
@@ -2075,6 +2198,33 @@ to prevent path substitution between validation and access. No group/world writa
 trust files. Treat read-only image-layer files as deployment inputs with equivalent
 integrity guarantees. Preserve complete evidence on export; URLs alone are not an
 offline artifact. YAML comments may be regenerated rather than preserved.
+
+On supported POSIX systems, accept regular trust files owned by the effective user
+or root, with no group/world write permission. Read permission is not policy-write
+authority; public evidence may be deployed read-only by root for an unprivileged
+consumer. Require every containing directory from a trusted ancestor to the file
+to be root- or effective-user-owned and not group/world writable. A sticky writable
+directory is not a trusted policy directory. Newly created private directories use
+mode 0700 and writer-created files use mode 0600. Validate the same ownership and
+directory rules for proposal output and the stable lock file.
+
+Resolve and access paths through validated directory handles without following
+symlinks, and perform replacement relative to the retained parent handle. Reject
+multiply linked cache/lock files for writing so path aliases cannot create separate
+transaction locks for one input. Create the lock safely if absent, validate it if
+present, and never unlink it during normal operation. Cooperating writers must use
+the same stable destination and lock; deployment must not replace the lock inode.
+Test substitution of parent directories and lock files in addition to the final
+artifact, and verify that unsafe paths fail before any trust-file modification.
+
+Writable operation requires a local filesystem with the tested cross-process lock,
+atomic rename, file sync, and directory sync semantics. Network/distributed writable
+filesystems are outside initial support; do not claim those durability guarantees
+for them. Read-only image-layer or mounted regular-file deployment remains supported
+when it satisfies the integrity rules. Symlink-based configuration projections are
+not supported: deploy a regular file in a trusted directory or mount instead. A
+trusted deployment agent must enforce rollback prevention and coordinate replacement
+with writers; permissions alone do not identify an older valid artifact.
 
 Put validated import, immutable export, and source-independent admission interfaces
 beside the shared data-management code. Keep filesystem decoding and locking outside
@@ -2214,7 +2364,8 @@ planning prototypes do not replace them.
 
 
 
-Implement Phases 0 through 11 in order. Each phase builds on the completed preceding
+Implement Phases 0 through 11 in order, including 3a after 3 and 5a–5c in place of 5.
+Each phase builds on the completed preceding
 phases; it is not independently applicable to an earlier checkout. Each phase must
 produce one reviewable commit with a complete implementation, tests, and maintained
 documentation for the behavior it introduces. If a phase proves too large for one
@@ -2239,14 +2390,17 @@ precise retrieval or rejection for missing/ineligible dependencies before comple
 
 Reject unsupported record kinds, decisions, and options until their implementing
 phase enables them; never accept an uninterpreted trust record or silently ignore
-its policy. Schema declarations do not enable a capability. Do not add compatibility
+its policy. The withdrawal-only path may remove understood but currently prohibited
+decisions under Section 2e; this does not enable their consumption. Schema declarations
+do not enable a capability. Do not add compatibility
 paths for intermediate implementations. Shared interface changes belong to the phase
 that needs them, with all existing callers and tests updated in that commit.
 
 | Milestone | First phase delivering the behavior |
 | --- | --- |
 | Internal shared prefill and export contracts | 1, with concrete portable storage in 2 and adapters in 3–7 |
-| Goal 1: explicit preparation and portable reuse through all three commands | 8 |
+| Goal 1, first supported delivery: NEAR software preparation/reuse through all three commands | 3a |
+| Goal 1, complete initial provider/dependency scope and portable budgets | 8 |
 | Consumption of exact operator decisions through shared effective policy | 9 |
 | Goal 2: reviewed whitelist authoring, proposals, and withdrawals | 10 |
 | Automatic portable persistence during serving | 11 |
@@ -2310,6 +2464,11 @@ teep-owned and dependency-owned HTTP attempts, including retries, redirects, CT/
 bootstrap and refresh, discovery, live attestation, NRAS, and Proof of Cloud.
 Separate preparation, pre-inference work, inference/probe requests, and TLS handshakes.
 Record provider, format, hardware scope, policy, and dependency-cache conditions.
+Implement and test the three-counter contract in Section 4b, including an internal
+transport retry that produces multiple attempts within one outer `RoundTrip`.
+Reconcile client and server observations for failures and cancellation; count proxy
+CONNECT overhead separately. No assertion may label outer-wrapper counts as all
+transport attempts without this coverage.
 
 Test successful service sequences and early failures separately; a shorter failure
 sequence is not a successful-admission budget. Provide deterministic counters and
@@ -2357,12 +2516,17 @@ and directory synchronization. Keep encoding and disk I/O outside runtime mutexe
 Preserve the current policy state under the lock without copying policy from an
 evidence snapshot; do not implement whitelist editing here. Merge exact raw inputs
 and reject conflicting descriptive associations. Derived result fields are invalid.
-Reserve typed TUF state support for its Phase 5 implementation.
+Reserve typed TUF state support for Phase 5a and current TUF evaluation for Phase 5b.
 
 Test malformed/unknown input, aliases/cycles, forged checks, duplicate or ambiguous
 selectors, dangling dependencies, content mismatch, unsupported approval fields, untrusted
 imports, size bounds, reference collection, symlinks, path substitution, permissions,
 concurrent disjoint writers, cancellation, write failure, and crash boundaries.
+Cover root-owned read-only deployment, effective-user-owned writable deployment,
+untrusted parent ownership/permissions, parent and lock substitution, hard-link
+aliases, symlink projections, and lock-inode stability across atomic replacement.
+Run transaction/durability tests on each supported local filesystem/platform and
+document the supported deployment assumptions.
 Test software-version churn through capacity, removal of collectible roots with
 shared dependencies, deterministic selection, and recovery without resetting policy
 authority or TUF state. Extend protected-decision/TUF cases when their phases enable
@@ -2391,6 +2555,32 @@ network access for eligible reuse and local upgrade reevaluation; assert remaini
 required queries and accurately report unrefreshed optional diagnostics. These tests
 complete the software portion of the NearCloud/NearDirect scenarios, not collateral budgets.
 
+### Phase 3a: Supported NEAR software preparation and reuse
+
+Enable ordinary `teep cache` for NearCloud/NearDirect software evidence, read-only
+NEAR prefill in `serve`, and cache-aware NEAR `verify`. Deliver the shared path
+resolver, strict loader, target selection, partial-failure reporting, immutable
+loaded snapshot, and `verify --no-cache` interfaces here. Use the final command
+shapes; unsupported targets/kinds fail explicitly and later phases extend the same
+services without compatibility adapters. Operator decisions and autocache remain
+disabled. The complete command surface in Section 1 is the final scope, not a claim
+that every provider or material adapter is available at this milestone.
+
+Export only complete eligible NEAR software sets through Phase 3's production path.
+CPU collateral, JWKS, CT metadata, NRAS, PoC, and discovery retain their normal live
+requirements; do not require the later adapters for this supported release. CLI
+reports and documentation identify software-only prefill and count the remaining
+dependency work explicitly. Mixed-provider service uses Section 5's capability
+rules, so unrelated unsupported routes retain ordinary live behavior.
+
+Test the command/path and mixed-provider contracts for this supported scope, strict
+input handling, read-only use, successful-target export, partial failure, and exact
+loaded-artifact reporting. Deny prepared NEAR software retrievals on restart while
+necessary live groups remain available. Prove command enforcement equivalence through
+the established test layers, and report preparation cost separately from serving
+cost. This commit delivers an independently usable request-reduction milestone;
+it does not claim complete collateral budgets or Tinfoil cache support.
+
 ### Phase 4: CPU collateral reuse
 
 Add Intel collateral and AMD VCEK adapters through the existing CPU verifiers and
@@ -2408,27 +2598,53 @@ names, including cross-provider merging and rejection of substituted input roles
 and exact retrieval or rejection for ineligible objects. Do not add evidence expiry
 to an already admitted runtime authorization or weaken fresh quote validation.
 
-### Phase 5: Tinfoil release reuse
+### Phase 5a: TUF checkpoint authentication and persistence
 
-Implement complete code/platform release sets, signed measurement-reference reuse,
-explicit Sigstore TUF dependencies, and bounded known-candidate release retrieval on a miss.
-Use the existing signature and measurement-binding verifiers. Retain required root
-transitions, timestamp/snapshot/targets and delegated metadata, and trust-target bytes.
-Distinguish embedded bootstrap roots from retained evidence. Supplied V3 collateral
-that lacks shared verification remains unsupported as a verified result.
+Implement typed TUF state and historical checkpoint authentication independently
+of current target eligibility. Retain root transitions, authenticating key epochs,
+parent metadata, delegated-role context, and accepted partial transitions through
+the existing storage transaction. Use the pinned library's signature primitives
+and rotation/reset rules. This phase cannot authorize a trust target from historical
+knowledge or enable portable Tinfoil release consumption.
+
+Test complete and partial checkpoint restoration, expired historical metadata,
+missing dependencies, invalid signatures, same-version conflicts, authenticated
+key rotation, concurrent transaction reconciliation, protected collection, and
+restart from committed versus read-only state. Demonstrate transition-on-error
+capture with the pinned library. This phase is one reviewable commit.
+
+### Phase 5b: Current TUF evaluation and bounded refresh
+
+Build fresh current-time verification sessions over Phase 5a's authenticated state.
+Implement local eligible-snapshot evaluation and bounded authenticated refresh,
+including exact trust-target hash/length checks and Sigstore root parsing. Publish
+accepted transitions even when a later step fails, and reconcile concurrent sessions
+before completing material evaluation. Isolate clients and metadata from ambient
+Sigstore caches. Historical rollback knowledge alone never makes a target eligible.
+
+Test local verification with retrieval denied, expiry and missing-input refresh,
+two successive refreshes, timestamp acceptance followed by failed snapshot download,
+restart after timestamp expiry, rollback rejection, root-key resets, and a newer
+concurrent transition superseding a candidate. Verify client cleanup, request counts,
+and bounded shared retrieval. This phase is one reviewable commit.
+
+### Phase 5c: Tinfoil release selection and binding
+
+Implement complete code/platform release sets and signed measurement-reference reuse
+through Phase 5b's trust-material resolver. Add bounded known-candidate release
+retrieval on a miss, using existing signature and measurement-binding verifiers.
+Supplied V3 collateral lacking shared verification remains unsupported as a verified
+result; a parsed envelope cannot add coverage.
 
 Test direct TDX code/hardware binding independently and cloud SEV router scope.
 Cover an older authenticated matching release, a newer unbound release, tag-only
 references, incomplete bundles, component failures, and known-candidate count/byte/time
-limits, including explicit failure of unsupported release enumeration. Exercise TUF signatures, expiry, root transitions, rollback/version checks,
-missing dependencies, scoped policy changes, and local build-update reevaluation.
-Implement and test the complete [trusted version-state contract](#tuf-trusted-version-state),
-including partial updates, concurrent persistence, collection, and read-only restarts.
-First demonstrate checkpoint restoration separately from fresh verification sessions,
-including expired/partial history and the pinned API's transition-on-error behavior.
-Deny eligible release/TUF retrievals and count cold discovery separately. Preserve
-router sharing and direct authority isolation. These tests complete the release
-portion of both Tinfoil scenarios; CT prefill follows in Phase 7.
+limits, including explicit failure of unsupported release enumeration. Test scoped
+policy changes and local build-update reevaluation with eligible release/TUF retrieval
+denied. Count cold discovery separately and preserve router sharing and direct
+authority isolation. This commit completes the release portion of both Tinfoil
+scenarios; CT prefill follows in Phase 7. Phases 5a, 5b, and 5c together implement
+the complete [trusted version-state contract](#tuf-trusted-version-state).
 
 ### Phase 6: NVIDIA key-material reuse
 
@@ -2437,7 +2653,9 @@ verifier. Preserve issuer/origin policy, original retrieval time, cache eligibil
 key-rotation refresh, and bounded concurrent retrieval. This phase does not introduce
 a portable NRAS verdict or an independent NVIDIA reference-image verifier.
 Replace leader-context singleflight ownership with the bounded material-owner
-lifecycle and cancellable waits specified in Section 4; import/export alone is insufficient.
+lifecycle and shared retrieval-coordination helper specified in Section 4;
+import/export alone is insufficient. Keep NVIDIA eligibility and refresh throttling
+in the NVIDIA owner.
 
 Test trusted import, stale and malformed keysets, incorrect authority, unknown key
 IDs, eligible key rotation, refresh failure, concurrent consumers, and build/policy
@@ -2459,7 +2677,8 @@ original retrieval time, refresh rules, and live WebPKI, TLS identity, and SCT c
 Use the same material interfaces; do not use an inference-client-only cache or
 weaken bootstrap verification to avoid a request.
 Replace network I/O under `logListLock` with bounded shared retrieval and completion
-notification. Implement owner cleanup for the bootstrap client and distinguish
+notification through the same helper used by NVIDIA. Keep CT bootstrap and log-list
+policy in the checker. Implement owner cleanup for the bootstrap client and distinguish
 context-aware waits from the bounded TLS-callback wait described in Section 4.
 
 Test all checker construction paths, eligible prefill, expiry, malformed/substituted
@@ -2472,19 +2691,25 @@ cancellation where a context is available, a shared failure without serial retri
 by queued waiters, timeout, shutdown, and refresh/import races. Verify that active
 unrelated HTTP/2 streams continue and no failed refresh becomes a successful CT check.
 
-### Phase 8: Command integration and complete portable budgets
+### Phase 8: Complete command capabilities and portable budgets
 
-Enable ordinary `teep cache`, read-only `serve` prefill, and cache-aware read-only
-`verify` together. Use one path resolver with the specified flag/environment/config/
-default precedence. Implement target resolution, multi-target collection, complete
-successful-target export, partial-failure reporting, and immutable loaded snapshots.
-Use the established shared services, material adapters, and disk transaction layer;
-introduce no provider-specific verification inside command orchestration.
+Extend Phase 3a's commands to Tinfoil and all implemented portable material adapters.
+Reuse its path resolver, target handling, successful-target export, partial-failure
+reporting, and immutable loaded snapshots. Connect the established material adapters
+through shared services and the disk transaction layer; introduce no provider-specific
+verification inside command orchestration or second command implementation. Complete
+the cross-provider/collateral budgets without changing the earlier software-only
+milestone's enforcement contract.
 
 Test all target forms and invalid syntax, discovery changes, complete dependencies,
 missing implicit versus explicit files, destination creation, secure/read-only files,
 concurrent replacement, and explicit unsupported providers. Cover the relevance rules
-for implicit default data and `verify --no-cache`. Verify reports identify the exact
+for all path sources and `verify --no-cache`. Test the identical mixed-provider configuration and
+artifact selected by flag, environment, configuration, and default: all have the
+same applicability and enforcement outcomes. Cover unrelated shared evidence,
+unsupported policy rejection before traffic, and explicit per-target reporting of
+live-only verification. Extend matching-decision applicability tests in Phase 9
+when decision consumption is enabled. Verify reports identify the exact
 loaded artifact/build/policy; no-cache verification must not claim policy-rollout
 validation. Test fresh admission, deferred usability versus required live probes,
 and absence of cache/decision writes from `verify` or ordinary `serve`.
@@ -2495,7 +2720,8 @@ deny prepared groups, use independent cold replica state, and distinguish exact
 replay counts from observed full live totals. Do not require captured keys to
 authenticate a new local TLS server. Exercise cross-command enforcement equivalence, scoped policies,
 multi-component failure, and partial success. Include multi-model/cloud-router scope
-and concurrent clients. This phase delivers Goal 1; operator decisions and autocaching
+and concurrent clients. This phase completes Goal 1's initial provider/dependency
+scope beyond Phase 3a; operator decisions and autocaching
 remain disabled until their respective phases.
 
 ### Phase 9: Operator policy evaluation
@@ -2532,6 +2758,17 @@ registers, an explicitly reviewed B exception with the base failure still report
 and withdrawal of that exception restoring rejection. A cached evidence file cannot
 erase the configured restriction.
 Update security and review instructions in this commit, when exceptions become usable.
+Test an ordinary measurement decision after its original collateral, certificate,
+and report-bound tokens expire: fresh valid admission of the same selected subject
+remains possible. Separately reject invalid historical signatures, missing observation
+dependencies, and failed current prerequisites. Test that old tokens cannot satisfy
+new report-bound work. Test mixed-provider decision applicability independently of
+cache path selection, including matching unsupported scopes rejected at startup.
+Test two failures within one factor with only one exact decision, both MRTD and
+MRSEAM failing together, and two component failures with only one excepted subject.
+Assert agreement between blocking, authorization publication, CLI status, report
+totals, and dashboard output. Race-test independent report clones containing nested
+failure/disposition data. No authoring workflow may expose incomplete failure sets.
 
 ### Phase 10: Whitelist editing and policy transactions
 
@@ -2565,10 +2802,17 @@ and apply; require renewed review without discarding or broadening the restricti
 Test interactive cancellation/confirmation, nonempty reasons, all-model and selected
 model flows, empty/unbounded selections, unsupported failures, strict/tampered proposals,
 stale revisions, changed policy or verifier requirements, and noninteractive use without explicit
-apply. Test no trust writes during proposal generation, withdrawals without provider
-connectivity, disabled providers, removed models, empty active configuration,
+apply. Test that apply accepts changed nonce/evidence bytes only when the exact
+reviewed subject, relevant failures, and policy remain unchanged. Test no trust writes
+during proposal generation and proposal-output collisions with cache/configuration/lock paths,
+alternate path spellings, hard links, symlinks, existing outputs, and a competing
+creator at publication. Assert original input bytes remain unchanged on every failure.
+Test withdrawals without provider connectivity, disabled providers, removed models, empty active configuration,
 targetless removal proposals, mixed additions/removals, nonzero live failures after a committed withdrawal,
-and removal racing ordinary evidence writers. Reject missing or extraneous elevated
+and removal racing ordinary evidence writers. Test removal after an upgrade prohibits
+a known decision kind or scope, including removal of the final decision, multiple
+prohibited decisions, and preservation of authority/revision. Unknown or malformed
+records still fail without writes. Reject missing or extraneous elevated
 acknowledgements without enabling unsupported classes. Keep prompts/reports free of
 credentials and inference content. This phase delivers Goal 2's authoring workflow.
 
@@ -2710,11 +2954,14 @@ must identify migration blockers rather than suggesting incomplete cache support
 | 1 | Document shared service ownership and actual interfaces; cross-reference the transport contracts for scope, lifetime, publication, and invalidation. |
 | 2 | Create/update `storage.md` for strict evidence schema, identities, dependency resolution, rejected approval fields, trusted imports, bounds, and secure transactions. |
 | 3 | Document NEAR software sharing, independent consumer evaluations, envelope handling, component completeness, and diagnostic retrieval behavior in storage/testing and provider references. |
+| 3a | Publish supported NEAR software-only cache/serve/verify use, common path resolution, `--no-cache`, mixed-provider behavior, partial failures, and exact software request savings. State remaining live dependency work and unavailable capabilities. |
 | 4 | Document Intel/AMD material applicability, header-delivered dependencies, freshness/revocation rules, sharing, and regression tests. |
-| 5 | Document Tinfoil release sets, TUF dependencies, matching-release discovery, direct/cloud scope, and the direct live-validation limitation. |
+| 5a | Document authenticated historical TUF checkpoints, partial transitions, key epochs, reconciliation, protected dependencies, and restart limits. |
+| 5b | Document current TUF eligibility, bounded refresh, request counts, concurrent transitions, and isolation from ambient caches. |
+| 5c | Document Tinfoil release sets, matching-release discovery, TUF integration, direct/cloud scope, and the direct live-validation limitation. |
 | 6 | Document NVIDIA JWKS trust and refresh rules, original retrieval-time handling, and retained report-bound NRAS work. |
 | 7 | Document CT prefill across all client owners, bootstrap/refresh rules, retained live TLS checks, and counting coverage. |
-| 8 | Publish implemented cache/serve/verify commands, common default path, target and failure behavior, `--no-cache`, read-only deployment, complete core YAML examples, and measured request methodology. Update setup/help/configuration and provider links. |
+| 8 | Extend command/provider documentation to complete initial scope and dependency prefill, including Tinfoil, complete core YAML examples, and measured request budgets. Update setup/help/configuration and provider links. |
 | 9 | Create/update `operator-decisions.md` for supported exact classes, prerequisites, effective policy, decision consumption, retained failures, and upgrade/withdrawal semantics. Update AGENTS.md and affected review instructions when exceptions become usable. |
 | 10 | Publish interactive/proposal/withdrawal workflows, reasons, revision conflicts, partial/shared scope, deployment instructions, and replacement of automatic config-editing options while retaining restrictive measurement-policy input. Keep help and configuration examples consistent. |
 | 11 | Document autocache opt-in, admission/export boundary, bounded asynchronous writes, errors, policy-preserving transactions, and restart budgets. |
