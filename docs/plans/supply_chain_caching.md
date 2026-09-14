@@ -184,8 +184,8 @@ Verification records also belong to the evidence class. Each records:
 
 Build identity must identify the actual verifier implementation, dependencies,
 security-relevant build options, and local modifications. A human version string
-alone is insufficient. Define deterministic canonical encodings for build and
-policy identities before implementation. Never include API keys in those encodings.
+alone is insufficient. Use the executable identity and canonical policy descriptors
+specified in Section 2e. Never include API keys in those encodings.
 
 ### 2a-i. Stapled evidence and independent subjects
 
@@ -406,6 +406,36 @@ hard restrictions or unsupported decisions block affected reuse with a clear err
 do not reinterpret them as broader exemptions. Revalidating a decision is local
 unless its documented evidence prerequisites require retrieval.
 
+Canonical policy descriptors use RFC 8785 JSON, with an explicit domain and version
+prefix before hashing. Sort set-valued rules/decisions by canonical identity; preserve
+order only where evaluation semantics depend on it. Exclude source-file formatting,
+paths, diagnostic strings, retrieval times, and unrelated provider rules. Hash the
+immutable deployed executable at startup, before constructing shared services, and
+retain that identity for the process lifetime. Deployment must not modify the
+executable in place. Use that digest for build identity; version/commit strings alone miss
+local modifications, dependencies, build tags, toolchain, and linker options. Refuse
+derived-result reuse if executable identity cannot be established; retained raw
+evidence may still be evaluated. Different executable bytes require reevaluation,
+even when their printed version matches. This conservative rule avoids a second
+hand-maintained list of code dependencies.
+
+The policy projection is explicit by operation:
+
+| Operation | Included policy dependencies |
+| --- | --- |
+| Component provenance | Provider/tier/format applicability; complete matching `ImageProvenance` rules (provenance mode, source repositories, OIDC issuer/identity alternatives, key fingerprint, `NoDSSE`, provider-signer and workflow constraints); applicable organization-signer rule; log/root identities; checks/exemptions/decisions actually used. |
+| Compose/release coverage | Exact required membership and binding semantics plus each referenced component's evaluated policy identity; no first-component scalar can substitute for the set. |
+| Intel/AMD material | Build-owned trust anchors/chains, allowed retrieval authority, platform/CA/product/TCB matching rules, and actual certificate/CRL validity and revocation requirements. Fresh quote measurements are inputs, not policy. |
+| NVIDIA/CT/TUF material | Accepted authority and trust/bootstrap roots, refresh and key-rotation rules, signature/time/version requirements, and current withdrawal restrictions. Metadata contents/version/expiry are evidence dependencies, not arbitrary user policy. |
+| Endpoint admission | Provider/route and required TLS/E2EE binding rules, model and gateway measurement policies, factor applicability, merged default/configured `allow_fail`, all applicable exact decisions, and dependent software/material policy identities. |
+
+Define descriptors beside the relevant evaluators and test mutation of every field.
+Read `ImageProvenance`, `OrgSignerPolicy`, and measurement rules from the validated
+policy objects; never maintain a separate incomplete policy copy in cache code.
+Cryptographic equality checks retain constant-time comparison. Canonical decision
+digests include the full record; aggregate policy identity includes only applicable
+active decisions. Material evidence updates need not invalidate unrelated policy.
+
 Decisions may be portable when their subjects are portable (image digest, signer,
 measurement set). Endpoint-specific key/identity facts retain endpoint scope.
 Removing a decision changes affected effective policies and requires a deployment
@@ -532,6 +562,17 @@ authorization as though it were an image-level fact. Resolve routes through the 
 provider contract. A saved NearDirect route must not override a newly selected
 route or current discovery validation.
 
+Durable invalidation and clean-owner state are prerequisites for endpoint restoration.
+Each `cache_state_dir` belongs to one service owner and is exclusively locked for
+that process lifetime; multiple owners may share the portable file but not this state.
+Read the predecessor's clean state, then durably mark this owner unclean before any
+restored or live authorization can be published. Only a drained shutdown with all
+required state and invalidation writes committed may mark the owner clean. If the
+predecessor was unclean, reject all its endpoint restoration and perform fresh
+admission using eligible portable evidence. An active ledger alone cannot close the
+crash interval between observing a trust failure and persisting its invalidation.
+See [the planning issue](supply_chain_caching_issues.md#endpoint-restoration-after-an-unclean-shutdown).
+
 Durable invalidation is a prerequisite for endpoint restoration:
 
 - Keep a deployment-owned writable record of invalidated persisted authorization
@@ -590,6 +631,27 @@ never persist an outage as a permanent rejection of an image.
 Tinfoil already uses embedded AMD signing chains and its VCEK proxy. Add caching to
 that verified retrieval path. Preserve its configured origin and fail-closed
 retrieval behavior. See [AMD certificate retrieval](../providers/tinfoil/tinfoil_support.md#amd-certificate-retrieval).
+
+### Material adapters established by source research
+
+The following boundaries use the versions pinned in `go.mod`, rather than assumed
+upstream APIs. They are implementation choices, not completed adapters.
+
+| Material | Existing owner and concrete integration |
+| --- | --- |
+| Intel | `attestation.NewCollateralGetter` already implements `trust.HTTPSGetter.GetContext`, returning both headers and bytes. Wrap it with validated typed lookup and acquisition/export; keep `VerifyTDXQuoteOnline` and go-tdx-guest signature, revocation, and current-time checks. The verifier invokes both quote verification and TCB-level extraction with the same options; deduplicate by authenticated scope, not just invocation count. |
+| AMD | `tinfoil.NewSEVCertGetter` returns embedded product signing chains and rewrites validated VCEK requests to Tinfoil's proxy. Insert typed VCEK lookup at this boundary; preserve product/HWID/TCB and certificate verification. Current `sevverify.Options{Getter: ...}` does not enable CRL retrieval. `evalSEVTCBNotRevoked` explicitly says AMD CRL is not checked. The cache must not manufacture a revocation success or add an unbudgeted CRL guarantee. |
+| Rekor | `RekorClient` retrieves UUIDs/entries and computes parsed provenance, SET, inclusion proof, and DSSE results. Split byte acquisition from the existing entry verifier, retaining the complete response fields needed for SET/proof verification. Current certificate parsing extracts OIDC extensions; it is not a general independent Fulcio-chain verifier. Retain that actual assurance distinction. |
+| Sigstore/TUF | `SigstoreVerifier.fetchAndVerifyAttestation` creates its own root client and calls `FetchTrustedRootWithOptions`. Inject the verified trust-material resolver and use the local metadata sequence in Section 6. The pinned lower-level API supports in-memory verification; the higher-level updater also owns disk cache and refresh behavior and is not a transparent YAML adapter. |
+| NVIDIA | `NVIDIAVerifier` owns JWKS entries, singleflight retrieval, creation times, capacity, and rotation retry. Add immutable import/export on that owner, preserving its one-hour eligibility and refresh throttling. Do not copy JWT result caches into a new report. |
+| CT | `tlsct.DefaultChecker` currently refers to a process-wide checker; normal and pinned clients attach it. Its log list has a 24-hour lifetime and a separate bootstrap HTTP client. Introduce checker dependency injection per service/command and pass it through normal, pinned, proxy, and dependency-client construction. Sharing one configured checker within that owner is sufficient; mutating the process global from cache import is not. Preserve the bootstrap client's existing WebPKI behavior and every live SCT check. |
+
+This includes two explicit ownership changes: shared evidence orchestration and
+per-owner CT injection. None of these dependencies currently supplies a complete
+portable artifact snapshot/export operation. Existing getters and verifiers provide
+the integration points; wrappers still need immutable bytes, eligibility, scoped
+singleflight, and bounded retention. No reusable verification result may be formed
+by parsing a display report or trusting an asserted `pass` field.
 
 ### Chutes support after transport migration
 
@@ -670,6 +732,22 @@ Endpoint persistence additionally requires the durable-state rules in this plan.
 
 ### Required checks and diagnostic retrieval
 
+The current factor implementation establishes the classification. In
+`evalSigstoreVerification`, missing compose-only digest lookups are tolerated, but an
+empty result list becomes Skip (or an explicit ACI/1 missing-backend failure).
+`buildTransparencyNoRekor` returns NotApplicable when no signed components are
+required. Provider/component signer evaluators also exclude compose-only components.
+Consequently removing HTTP queries without adjusting the typed report inputs can
+change enforcement or hide an ACI/1 backend gap.
+
+Represent each compose-only component explicitly as a locally bound component with
+no required transparency query. Keep all expected signed components in the required
+work set and preserve ACI/1's separate absence of model evidence. Evaluate factors
+from typed component coverage, not a fabricated successful Rekor index response.
+Regression tests must compare enforced outcomes and preserved gaps before/after this
+change. Signed components reuse complete verified Rekor entry bytes and proofs;
+index search results are retrieval hints, not the cryptographic proof to cache.
+
 Classify each supply-chain retrieval by the production check it serves. The current
 merged-digest path can perform Rekor index/provenance requests even for compose-only
 components. A YAML `not_required` value alone must not suppress an enforced factor
@@ -707,23 +785,37 @@ the attested release through the supported retrieval path.
 
 ### Resolving authenticated Tinfoil releases on a miss
 
-Resolve release evidence by attested measurements, not a requirement to run the
-latest release. First try locally retained signed predicates indexed by repository,
-platform, and measurement identity. Next use supplied artifacts only if the shared
-verifier supports their independent validation. Otherwise use the supported GitHub
-proxy retrieval path to discover candidate releases: a latest-release response may
-provide a candidate, but a mismatch must continue to bounded release/tag discovery
-and retrieval of digest-addressed bundles for older candidates. Require independent
-signature, signer, subject, and measurement checks for each candidate.
+Use a local index of verified release predicates keyed by repository and measured
+subject first. The permitted GitHub proxy supports latest-release metadata,
+`/<repo>/releases/download/<known-tag>/tinfoil.hash`, and digest-addressed attestation
+bundles. Planning probes of the router repository established that latest metadata
+and a known older release download work, but release enumeration (with or without
+pagination parameters) and `/releases/tags/<tag>` return HTTP 400 with an unsupported
+path response. Do not implement speculative pagination or numeric tag guessing.
 
-Bound candidate count, bytes, pagination, and total time. Exhaustion or absence of
-an authenticated matching release fails with a specific discovery diagnostic; never
-accept the latest mismatch or weaken binding. Report candidate-discovery requests
-separately from the three-request single-candidate baseline. Implement and fixture-test
-an older matching release, latest mismatch, missing bundle, and discovery limits in
-the shared verifier before claiming cold-miss support. If the provider/proxy cannot
-supply a matching candidate within this contract, report that limitation; a prepared
-matching artifact can still be used. Do not promise zero discovery calls on a miss.
+On a miss, candidate hints may come from independently verified retained bundles,
+a tag delivered by the existing model-to-repository discovery response, and the
+supported latest-release response. A discovered tag is only a retrieval hint;
+verify the fetched bundle, repository/signer policy, and exact attested measurements.
+Retain that hint when resolving direct routes instead of discarding it. Supplied V3
+collateral is a candidate only after its format has an implemented verifier; merely
+parsing its envelope cannot establish trust. Deduplicate candidates before retrieval.
+
+Bound the known-candidate search to 32 candidates, 32 MiB aggregate response bytes,
+and the existing bounded admission deadline, with the existing per-response limits.
+Stop on an authenticated exact match. Exhaustion, a missing bundle, or no matching
+known candidate fails the affected admission loudly. A latest mismatch never becomes
+acceptable because another release could not be located. Record which candidate
+source and dependency required each request, separately from verification costs.
+
+A previously prepared matching release remains usable without asking whether it is
+latest. However, cold preparation cannot guarantee discovery of every older deployed
+release through the currently permitted proxy. This limitation is recorded in
+[the planning issues](supply_chain_caching_issues.md#older-tinfoil-release-discovery).
+No new tag flag, direct-GitHub bypass, or alternate whitelist input is introduced.
+A broader discovery contract or a reviewed reference-hint interface is separate work.
+Fixture coverage must include supported known-tag retrieval, unsupported enumeration,
+matching older retained evidence, and failure when no known candidate matches.
 
 ### 4b. Request reduction and elimination
 
@@ -924,6 +1016,59 @@ collateral, stale JWKS/CT metadata, unknown key IDs, changed hardware, missing T
 transitions, and build/policy changes. Verify the precise necessary retrieval or
 failure rather than filling missing data from ambient developer caches. Publish
 preparation costs, cold-start costs, and per-request reuse separately.
+
+### 4e. Captured baseline and populated-evidence experiment
+
+The planning baseline below counts recorded HTTP responses in the named fixtures,
+not all attempts or current live-provider traffic. Library-owned bootstrap requests
+and cancelled requests may be absent. Fixture verification uses capture-time rules;
+these old bytes cannot be imported as currently eligible collateral without current
+eligibility checks. The successful NEAR fixture tests confirm existing production
+verification behavior under their configured factor policy, not every factor passing.
+
+| Fixture under `internal/integration/testdata/` | Recorded request groups | Total responses |
+| --- | --- | --- |
+| `nearcloud_z-ai_glm-5.3-flash_20260910_153519` | Attestation 1; Intel 8; NRAS 1; JWKS 1; PoC 2 (403); Rekor 33 | 46 |
+| `neardirect_z-ai_glm-5.3-flash_20260909_201111` | Discovery 2; attestation 1; Intel 4; NRAS 1; JWKS 1; PoC 1 (403); Rekor 10 | 20 |
+| `tinfoil_v3_cloud_glm-5-2_20260817_003424` | Attestation 1; AMD chain/VCEK 2; release 3 | 6 |
+| `venice_aci_e2ee-glm-5-2-p_20260826_010725` | Attestation 1; Intel 4; NRAS 1; JWKS 1; PoC 6 (200); Rekor 10 | 23 |
+
+The Tinfoil capture predates embedded signing-chain retrieval, so one recorded AMD
+request is no longer necessary in the current source. Neither these response totals
+nor a 403 shortcut replaces the successful-service budgets in Section 4d.
+
+A planning experiment populated content-addressed evidence lists from original
+response bodies and issuer-chain header values, deduplicated by SHA-256, and checked
+base64 round-trip/digest integrity. Serialized size below is compact JSON (valid YAML)
+with digest/kind/payload fields. It includes retained historical service/discovery
+responses for coverage analysis, not a prescription to export all those responses.
+No inference exchanges, credentials, consumable nonces, or private keys were imported.
+
+| Fixture | Distinct retained objects | Decoded bytes | Serialized bytes |
+| --- | --- | --- | --- |
+| NearCloud | 38 | 568,000 | 762,303 |
+| NearDirect | 20 | 466,552 | 624,705 |
+| Tinfoil cloud | 6 | 95,635 | 128,331 |
+| Venice ACI/1 | 23 | 313,948 | 421,614 |
+
+These establish representative byte costs and the need for header preservation;
+they are evidence-only research artifacts, not completed cache-loader fixtures or
+benchmarks of startup latency. TUF and CT material are absent from these captures
+and must come from their authenticated acquisition paths. Build the executable core
+examples by extracting the actual original compose strings, complete Rekor responses,
+and typed CPU collateral from these fixtures; never stamp current-build successful
+evaluations on historical bytes without verification. Keep live elapsed-time reports
+separate from deterministic request-count acceptance.
+
+A separate local prototype used the pinned go-tuf/Sigstore libraries on authenticated
+public repository metadata: bootstrap root 14, signed transition to root 15,
+timestamp 782, snapshot 165, targets 14, and the hash-verified `trusted_root.json`
+target. The `trustedmetadata` update sequence and Sigstore root parser completed
+locally in approximately 5 ms in one run without constructing a network client.
+This demonstrates API feasibility, not a performance guarantee, proof of latest
+metadata, or full offline Tinfoil admission. Retain root transitions in the examples:
+the pinned bootstrap root alone was expired at the research date, while the verified
+successor was eligible. Production uses current time and actual metadata versions.
 
 ## 5. Commands and deployment
 
@@ -1193,6 +1338,43 @@ software: TOFU supplies the latter only. An authenticated but revoked subject is
 not the same condition as a forged signature; inventory and diagnostics must retain
 that distinction even where elevated support is not yet implemented.
 
+### Ordinary decision implementation boundaries
+
+Source research identifies two different expected-value mechanisms. Model/gateway
+`MeasurementPolicy` contains MRTD, MRSEAM, and indexed RTMR allowlists; a selected
+unlisted-field tuple can become an ordinary measurement decision while preserving
+all other quote and configuration checks. In contrast, mismatch with a signed
+Tinfoil code/hardware predicate remains `unpublished_measurement`, an elevated
+candidate. Do not classify it as an ordinary register-list edit merely because
+both compare measurements.
+
+Repository recognition and signer recognition are separate evaluators. An ordinary
+repository decision may extend the recognized repository/tier while retaining a
+fully specified existing applicable signer/provenance rule. If no such rule exists,
+repository recognition alone cannot create it. Organization-signer rules apply only
+when their repository/workflow/issuer predicates independently match. New image or
+compose versions already accepted by current policy require ordinary caching, not
+an artificial expected-digest decision: the current `ImageProvenance` policy does
+not define a universal expected-image-digest whitelist.
+
+Use typed verification failures and observations emitted before factor formatting;
+never identify an exception by matching error-message text. A signer candidate needs
+independently verified key possession and its required trust prerequisites even when
+the expected identity comparison fails. In the Tinfoil path, separate that comparison
+from bundle authentication instead of treating `FetchAndVerify`'s combined error as
+an authenticated observation. In the NEAR path, parsing certificate OIDC extensions
+alone does not independently validate the issuer chain. Ordinary raw-key fingerprint
+TOFU may use verified possession/provenance; an OIDC-identity exception requiring an
+independent chain is unavailable until that prerequisite is implemented. Do not claim
+additional assurance for existing `NoDSSE` or compose-only components.
+
+Before authoring candidates, classify each as implemented ordinary, existing-policy
+accepted, elevated/deferred, or unsupported. Preserve all base failures, prerequisite
+outcomes, applicable exemptions, and exact selected fields. These capability limits
+are recorded in [the planning issues](supply_chain_caching_issues.md#ordinary-decision-coverage)
+and apply equally to interactive and proposal workflows. They introduce no class flag
+or separate policy input. Phase 9 tests each supported typed reason and rejects the rest.
+
 ### 5b. Operator decision command and reporting
 
 The normal workflow selects concrete proposed changes, not decision-class names.
@@ -1349,8 +1531,14 @@ Software dependencies use structured selectors containing consumer `scope`, intr
 evaluation. For compose, the subject digest covers the exact original `app_compose`
 bytes. For a release set, it covers canonical complete component identities, roles,
 and required binding relationships, not one primary release. Exclude consumer policy,
-provider, timestamps, and evaluation outcomes from this intrinsic identity. Define this canonical
-encoding before implementation. Component order is not identity; distinct roles,
+provider, timestamps, and evaluation outcomes from this intrinsic identity. For
+`canonical_release_set_v1`, hash the ASCII domain `teep:release-set:v1\n` followed by
+RFC 8785 JSON containing the complete `components` list of `role`, `artifact`, and
+`required_binding` values. Sort set members by their canonical bytes and reject
+duplicate identities before hashing. Do not include the resulting digest itself.
+For a typed material set, use the domain `teep:material-set:v1\n` and canonical
+kind/applicability fields plus complete named input references, excluding verification
+outcomes. Single-object evidence/subjects continue to hash their exact original bytes. Component order is not identity; distinct roles,
 repositories, digests, and binding requirements are. Match selectors exactly and
 reject missing or ambiguous results. Writers keep one active complete evaluation per
 subject/consumer-scope/effective-policy/build key. Under the lock, identical evaluations
@@ -1390,7 +1578,13 @@ inputs select eligible records through the shared production verifier. A matchin
 lookup key alone never authenticates a new report, key, or connection.
 
 `inputs` names each original evidence object by digest, including certificate chains
-returned in HTTP headers. No payload placeholder implicitly includes other evidence
+returned in HTTP headers. Preserve each original header name and value and its
+percent-encoded-PEM representation. A typed decoder reconstructs the expected
+getter headers; do not replace them with a generic merged certificate blob.
+The `intel_issuer_chain_header` evidence kind carries `header_name` and
+`encoding: percent_encoded_pem`; its digest covers the original header-value bytes.
+The material input role must agree with that header name, and validation checks the
+actual certificate chain rather than trusting the name. No payload placeholder implicitly includes other evidence
 objects. Required signed bundles retain their complete original representation;
 additional roots, metadata, and chains use explicit references. Each typed adapter
 must reject incomplete inputs. `verification.dependencies` uses `source: cache`
@@ -1431,6 +1625,26 @@ retain all required transitions and delegated metadata as additional typed input
 Run existing TUF signature, expiry, version, target-hash, and rollback checks locally;
 a root update may require additional evidence. Neither TUF nor CT prefill may weaken
 bootstrap authentication to avoid a request.
+
+Local Sigstore metadata evaluation uses the pinned go-tuf `trustedmetadata` API:
+initialize from the build's bootstrap root, apply each consecutive `UpdateRoot`,
+then `UpdateTimestamp`, `UpdateSnapshot(..., false)`, and
+`UpdateDelegatedTargets` for targets and each required delegation. Verify target
+length/hashes before `root.NewTrustedRootFromJSON` and normal bundle verification.
+Use the current time, never the capture time, in production. Compare incoming
+versions with the trusted deployment's retained high-water state; a fresh verifier
+instance alone does not provide historical rollback protection.
+
+This evaluates a retained signed metadata snapshot within its validity bounds; it
+does not establish that no newer root or timestamp exists. Do not synthesize a 404
+for an absent next-root file. The regular updater probes for newer roots and the
+Sigstore wrapper refreshes by default; `DisableLocalCache` does not disable retrieval.
+Neither `ForceCache` nor `UnsafeLocalMode` is the cache adapter. On expired, missing,
+incompatible, or revoked-by-current-policy material, run bounded authenticated live
+refresh through an injected fetcher and retain the complete returned graph. Keep
+that fetcher isolated from ambient `$HOME/.sigstore` state and from other deployments.
+The bounded-snapshot update semantics and withdrawal responsibility are recorded in
+[the planning issues](supply_chain_caching_issues.md#sigstore-trust-metadata-reuse).
 
 Examples 6a, 6b, 6c, 6e, and 6h are portable admission-prefill examples for their stated
 hardware and evidence. Their numeric budgets are in Section 4d. Populate real bytes
@@ -1884,17 +2098,25 @@ evidence:
   kind: ct_log_list
   payload_base64: "<original authenticated CT log-list JSON>"
 - digest: sha256:<model TCB issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original model TCB issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Tcb-Info-Issuer-Chain
+  encoding: percent_encoded_pem
 - digest: sha256:<QE identity issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original QE identity issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Sgx-Enclave-Identity-Issuer-Chain
+  encoding: percent_encoded_pem
 - digest: sha256:<PCK CRL issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original PCK CRL issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Sgx-Pck-Crl-Issuer-Chain
+  encoding: percent_encoded_pem
 - digest: sha256:<gateway TCB issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original gateway TCB issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Tcb-Info-Issuer-Chain
+  encoding: percent_encoded_pem
 ```
 
 ### 6b. Near direct: the same structure under its own policy
@@ -2123,14 +2345,20 @@ evidence:
   kind: ct_log_list
   payload_base64: "<original authenticated CT log-list JSON>"
 - digest: sha256:<model TCB issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original model TCB issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Tcb-Info-Issuer-Chain
+  encoding: percent_encoded_pem
 - digest: sha256:<QE identity issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original QE identity issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Sgx-Enclave-Identity-Issuer-Chain
+  encoding: percent_encoded_pem
 - digest: sha256:<PCK CRL issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original PCK CRL issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Sgx-Pck-Crl-Issuer-Chain
+  encoding: percent_encoded_pem
 ```
 
 ### 6c. Tinfoil: code and platform references in a release set
@@ -2357,14 +2585,20 @@ evidence:
   kind: ct_log_list
   payload_base64: "<original authenticated CT log-list JSON>"
 - digest: sha256:<model TCB issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original model TCB issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Tcb-Info-Issuer-Chain
+  encoding: percent_encoded_pem
 - digest: sha256:<QE identity issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original QE identity issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Sgx-Enclave-Identity-Issuer-Chain
+  encoding: percent_encoded_pem
 - digest: sha256:<PCK CRL issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original PCK CRL issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Sgx-Pck-Crl-Issuer-Chain
+  encoding: percent_encoded_pem
 ```
 
 Cloud uses the same structure with `provider: tinfoil_v3_cloud`, `tier: gateway`,
@@ -2628,14 +2862,20 @@ evidence:
   kind: ct_log_list
   payload_base64: "<original authenticated CT log-list JSON>"
 - digest: sha256:<gateway TCB issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original gateway TCB issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Tcb-Info-Issuer-Chain
+  encoding: percent_encoded_pem
 - digest: sha256:<QE identity issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original QE identity issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Sgx-Enclave-Identity-Issuer-Chain
+  encoding: percent_encoded_pem
 - digest: sha256:<PCK CRL issuer chain>
-  kind: x509_certificate_chain
-  payload_base64: "<original PCK CRL issuer chain bytes from the corresponding HTTP header>"
+  kind: intel_issuer_chain_header
+  payload_base64: "<original header value bytes, without decoding or normalization>"
+  header_name: Sgx-Pck-Crl-Issuer-Chain
+  encoding: percent_encoded_pem
 ```
 
 ### 6f. Optional endpoint persistence references software by identity
@@ -2736,6 +2976,7 @@ schema_version: 1
 kind: endpoint_persistence_state
 deployment_identity: "<deployment identity>"
 state_identity: "<deployment state identity>"
+owner_clean: true
 revision: 12
 authorizations:
 - identity: "<durable authorization identity>"
@@ -2751,7 +2992,10 @@ authorizations:
 
 An authoritative `active` entry is necessary, not sufficient: apply all Section 2c
 and 3c restoration checks, including current deployment/build/policy and scope.
-This file is never imported from a portable evidence bundle. Commit invalidation
+This file is never imported from a portable evidence bundle. `owner_clean: true`
+represents a fully drained predecessor, not a status an active process may retain.
+Startup commits `owner_clean: false` before publishing any authorization; an unclean
+predecessor requires fresh admission even when individual entries say active. Commit invalidation
 or eviction through the mandatory writer before later restoration can succeed;
 missing state is not an empty invalidation set. Restore only a matching committed
 pair after crash recovery. Policy/configuration rollout must protect both files
@@ -3053,7 +3297,15 @@ evidence:
 
 Use bounded, strict YAML decoding. Reject unknown or missing required fields,
 duplicates, null required values, invalid identifiers, unsupported schema versions,
-multiple documents, cycles, aliases, and ambiguous references. Bound file size,
+multiple documents, cycles, aliases, and ambiguous references. Initial implementation
+limits are 64 MiB encoded file size, 48 MiB total decoded evidence, 16 MiB per decoded
+evidence object, 65,536 records, nesting depth 32, and dependency depth 16; lower
+existing kind-specific parser/network bounds still apply. Check bounds while reading
+and before allocating decoded payloads. These cover the sampled sub-MiB artifacts
+without promising unlimited model coverage; all-model selection remains supported,
+and an oversized explicit write fails with a size diagnostic rather than dropping
+policy or required evidence. Exercise the maximum allowed artifact and parallel
+loads in storage tests; do not claim startup latency from file size alone. Bound file size,
 object count, decoded payload size, nesting, and reference traversal. Dispatch
 evidence kinds explicitly; reject unsupported kinds. Parse embedded JSON through
 `internal/jsonstrict`. Low-level parsers return unknown field names to the caller.
@@ -3111,11 +3363,77 @@ between authorization publication and durable invalidation. Lock files must surv
 cache-file replacement. Disjoint provider updates preserve each other's objects;
 reference-aware collection must not delete evidence used by another verified subject.
 
+Use a fixed lock order: acquire the file transaction lock without a runtime mutex;
+load the authoritative artifact and policy revision; validate the immutable snapshot
+against that state; resolve additions/removals and collect references; write/sync the
+replacement; release the file lock. Runtime publication/invalidation rechecks its own
+generation after any required disk work. Never acquire a file lock while holding the
+runtime authorization mutex. A cancelled observer cannot cancel a transaction another
+client needs; writes have a bounded owner context.
+
+For endpoint persistence, write/sync the authorization object first, then commit/sync
+its digest-bound active ledger entry before claiming persistence. A crash between
+those steps leaves an unreferenced, unrestorable object. Invalidation/eviction must
+prevent acquisition of that generation in memory while its invalidated ledger state
+is synchronously committed; a failed commit blocks affected reuse. An interrupted
+invalidation must not leave an old active authorization restorable: maintain a
+write-ahead invalidation intent, treat any incomplete intent as invalidated on restart,
+and never acknowledge durable completion before directory synchronization. Retain
+state and intents under the separate deployment-owned directory; evidence-file
+replacement cannot reset them. Storage tests must exercise every boundary and the
+existing authorization generation race checks together. Offline whole-directory
+rollback remains a trusted deployment responsibility, not a property of YAML revisions.
+
 An optional evidence write failure can leave verified memory state intact. A
 mandatory persistence failure cannot be converted to success. Logs identify target,
 check, and failure without API keys, inference content, or private key material.
 
-## 8. Implementation phases and required coverage
+## 8. Planning findings and implementation phases
+
+### Shared admission design established during planning
+
+The current commonality is lower-level verification, not one shared orchestration
+service. `proxy.Server.fetchVerified` owns serving orchestration and calls proxy
+helpers; `verify.runEvidence` independently constructs verifiers, fetches evidence,
+collects factors, and completes probes. The existing `SYNC` comments identify this
+duplication. Both use attestation/provider primitives, but cache code must not be
+inserted twice. `proxy.authorizationStore` owns the live generation, bounded shared
+work, report/key/identity publication, eviction, and usability promotion. Its
+`publish` method rechecks admission time immediately before storing a generation.
+
+Extract `internal/admission` as a service layer importing provider and attestation
+primitives, never proxy or CLI packages. Proxy and verify consume it. Keep provider
+route resolution in existing immutable route APIs. Use three boundaries:
+
+1. `Collect`: fetch a fresh nonce-bound raw response for the resolved route through
+   the provider-owned attester and injected clients. Preserve original evidence and
+   strict parsing; no cached historical quote can satisfy this operation.
+2. `Evaluate`: run the shared CPU, GPU, PoC, software, binding, and effective-policy
+   operations, returning an immutable verified-evidence snapshot and admission-time
+   eligibility. Material resolvers are injected per owner; the snapshot includes
+   original dependencies, actual failures/exemptions, and authenticated key/identity.
+3. `ExportPortable`: derive only complete eligible portable graphs from that snapshot
+   through the typed material adapters. A report's display fields are not export input.
+
+These are responsibilities and proposed internal names, not new public CLI APIs.
+Keep the existing proxy authorization store as the sole runtime generation owner;
+it consumes the shared candidate and retains its constructor/publication checks.
+`verify` always calls fresh collection/evaluation and then its required probe, without
+acquiring proxy runtime authorization. `cache` uses the same collection/evaluation
+and exports after non-deferred checks. Serving promotes E2EE usability only for the
+generation/model that actually completed it; portable export and persisted complete
+authorization therefore have distinct eligibility boundaries. Do not move probe or
+retry policy into a second cache orchestration path.
+
+Material lookup/population and policy projection are specified in Sections 2e, 4,
+and 6. Preserve caller cancellation and server-owned bounded shared work; perform
+network/disk I/O outside runtime locks. Source-independent prefill publishes through
+the same generation checks as live population. The remaining work in Phases 0/1 is
+permanent test infrastructure and this tested refactor, not rediscovering ownership.
+Material, policy, and interface acceptance still require production-path tests; the
+planning prototypes do not replace them.
+
+
 
 Implement Phases 0 through 13 in order. Each phase builds on the completed preceding
 phases; it is not independently applicable to an earlier checkout. Each phase must
@@ -3161,9 +3479,28 @@ conditional extensions described below; they do not block Near/Tinfoil delivery.
 Each phase updates the documentation identified in
 [Section 9c](#9c-phase-requirements-and-completion-checks).
 
-### Phase 0: Request accounting
+Planning source map: [serving orchestration](../../internal/proxy/proxy.go),
+[standalone verification](../../internal/verify/verify.go),
+[runtime authorization ownership](../../internal/proxy/authorization.go),
+[policy and factor evaluation](../../internal/attestation/report.go),
+[Rekor verification](../../internal/attestation/rekor.go),
+[TDX adapter](../../internal/attestation/tdx.go),
+[SEV adapter](../../internal/attestation/sev.go),
+[Tinfoil certificate retrieval](../../internal/provider/tinfoil/kds.go),
+[Tinfoil release retrieval](../../internal/provider/tinfoil/sigstore.go),
+[NVIDIA key ownership](../../internal/attestation/nvidia.go), and
+[CT checker/client construction](../../internal/tlsct/checker.go).
+Pinned dependency behavior comes from [go.mod](../../go.mod),
+[Sigstore v1.2.1 TUF client](https://github.com/sigstore/sigstore-go/blob/v1.2.1/pkg/tuf/client.go),
+[go-tuf trusted metadata](https://github.com/theupdateframework/go-tuf/blob/7e8f69f906ef/metadata/trustedmetadata/trustedmetadata.go),
+and [go-tuf updater](https://github.com/theupdateframework/go-tuf/blob/7e8f69f906ef/metadata/updater/updater.go).
+These establish the API boundaries; implementation tests must exercise the pinned
+versions rather than assuming newer library behavior.
 
-Establish the baseline and counting infrastructure for Sections 4b–4d. Count all
+### Phase 0: Permanent request accounting
+
+Implement permanent counters and regression fixtures for the planning baseline in
+Sections 4b–4e; extend response-only captures to observe all actual attempts. Count all
 teep-owned and dependency-owned HTTP attempts, including retries, redirects, CT/TUF
 bootstrap and refresh, discovery, live attestation, NRAS, and Proof of Cloud.
 Separate preparation, pre-inference work, inference/probe requests, and TLS handshakes.
@@ -3182,8 +3519,8 @@ no caching, policy, command, or admission behavior.
 
 ### Phase 1: Shared admission interfaces
 
-Extract source-independent collection, verification, acquisition, immutable snapshot,
-and validated prefill interfaces from the existing HTTP/2 attestation machinery.
+Implement the shared admission boundaries and ownership specified above, including
+source-independent collection, evaluation, immutable snapshots, and validated prefill.
 Connect existing Near/Tinfoil live serving and ordinary live `verify` to the shared
 services. Keep provider scope, key-use lifetime, report/key publication, admission-time
 checks, bounded verification ownership, and generation-safe invalidation there.
@@ -3256,7 +3593,7 @@ to an already admitted runtime authorization or weaken fresh quote validation.
 ### Phase 5: Tinfoil release reuse
 
 Implement complete code/platform release sets, signed measurement-reference reuse,
-explicit Sigstore TUF dependencies, and bounded matching-release discovery on a miss.
+explicit Sigstore TUF dependencies, and bounded known-candidate release retrieval on a miss.
 Use the existing signature and measurement-binding verifiers. Retain required root
 transitions, timestamp/snapshot/targets and delegated metadata, and trust-target bytes.
 Distinguish embedded bootstrap roots from retained evidence. Supplied V3 collateral
@@ -3264,8 +3601,8 @@ that lacks shared verification remains unsupported as a verified result.
 
 Test direct TDX code/hardware binding independently and cloud SEV router scope.
 Cover an older authenticated matching release, a newer unbound release, tag-only
-references, incomplete bundles, component failures, and discovery count/byte/time
-limits. Exercise TUF signatures, expiry, root transitions, rollback/version checks,
+references, incomplete bundles, component failures, and known-candidate count/byte/time
+limits, including explicit failure of unsupported release enumeration. Exercise TUF signatures, expiry, root transitions, rollback/version checks,
 missing dependencies, scoped policy changes, and local build-update reevaluation.
 Deny eligible release/TUF retrievals and count cold discovery separately. Preserve
 router sharing and direct authority isolation. These tests complete the release
@@ -3398,13 +3735,15 @@ another consumer's evaluation. Endpoint persistence remains disabled.
 ### Phase 12: Durable endpoint state
 
 Implement the deployment-owned persisted-authorization binding and invalidation ledger,
-secure state access, mandatory durable writer, committed-pair validation, and crash
-recovery described in Sections 3c and 6f. Keep this separate from optional evidence
+secure state access, mandatory durable writer, exclusive-owner clean/unclean state, committed-pair
+validation, and crash recovery described in Sections 3c and 6f. Keep this separate from optional evidence
 write-back. Define initialization and bounded retention without interpreting missing
 history as proof that an old authorization remains valid. Use the shared generation
 identity and classification contracts; do not publish restored runtime authorization.
 
-Test state/authorization digest binding, invalidation and eviction transactions,
+Test exclusive ownership, durable unclean marking before publication, clean marking
+only after drained shutdown, refusal of unclean-predecessor restoration,
+state/authorization digest binding, invalidation and eviction transactions,
 missing/corrupt/read-only state, deployment mismatch, stale records, interrupted writes,
 and crashes at each ordering boundary. Verify an old generation cannot invalidate a
 replacement and a committed invalidation cannot disappear through ordinary cache
@@ -3423,7 +3762,7 @@ Mandatory invalidation failures retain their fail-closed behavior even when the 
 portable writer is slow or unavailable.
 
 Test configuration validation, new-state provisioning, complete 6a/6f companion fixtures,
-same-build restoration budgets, build/policy-change fresh admission, route changes,
+clean same-build restoration budgets, unclean-shutdown and build/policy-change fresh admission, route changes,
 missing state, eviction, failed keys, concurrent streams, and crashes across runtime/disk
 boundaries. Verify stale requests cannot delete replacements and affected authorizations
 cannot reappear after restart. Test live E2EE completion and inference rate limits versus
@@ -3560,7 +3899,7 @@ must identify migration blockers rather than suggesting incomplete cache support
 | 9 | Create/update `operator-decisions.md` for supported exact classes, prerequisites, effective policy, decision consumption, retained failures, and upgrade/withdrawal semantics. Update AGENTS.md and affected review instructions when exceptions become usable. |
 | 10 | Publish interactive/proposal/withdrawal workflows, reasons, revision conflicts, partial/shared scope, deployment instructions, and replacement of old policy-edit inputs. Keep help and configuration examples consistent. |
 | 11 | Document autocache opt-in, admission/export boundary, bounded asynchronous writes, errors, policy-preserving transactions, and restart budgets. |
-| 12 | Document durable-state binding, mandatory transaction ordering, initialization, crash recovery, retention, and deployment rollback responsibility. State that restoration is not yet enabled. |
+| 12 | Document durable-state binding, mandatory transaction ordering, initialization, exclusive ownership and clean-shutdown eligibility, crash recovery, retention, and deployment rollback responsibility. State that restoration is not yet enabled. |
 | 13 | Publish endpoint-persistence configuration, complete artifact/state examples, exclusions, restoration budgets, and failure behavior; update transport and provider references as the process-exit boundary changes. |
 | Conditional extensions | Update provider capability matrices and per-class decision references with their implementing commits. Add newly supported examples, budgets, regression links, and security/review rules without changing the core contracts implicitly. |
 
@@ -3578,6 +3917,12 @@ unimplemented designs as statements of current behavior or turn the plan into a
 running implementation/validation log.
 
 ## 10. Discussion sources and remaining policy work
+
+Material research limitations and operator consequences are recorded in
+[the planning issues](supply_chain_caching_issues.md). These include unsupported older-release
+enumeration, bounded TUF snapshot reuse, ordinary-decision prerequisites, and clean-owner
+endpoint restoration. They do not introduce additional CLI flags.
+
 
 The following discussions provide source context; the requirements are specified
 in this document:
