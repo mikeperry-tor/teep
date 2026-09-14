@@ -46,13 +46,10 @@ teep verify [existing target/options] [--cache-file PATH | --no-cache]
 | `--apply-proposal PATH` | With `--update-whitelist`, validate and apply the exact reviewed selections noninteractively. Targets, explanations, and acknowledgements come from the proposal; no new model discovery or silent substitution. Mutually exclusive with proposal generation and target flags. |
 | `teep verify --cache-file PATH` | Verify fresh endpoint evidence against the candidate cache and effective policy without modifying the file. The flag is optional: default cache resolution is identical across all three commands. |
 | `teep verify --no-cache` | Run baseline live verification without cache evidence or operator decisions. Mutually exclusive with `--cache-file`; explicitly overrides environment/config/default cache selection. Reports that cache policy was not tested. |
-| `teep serve --autocache` | Automatically persist eligible evidence/results after successful admission through the shared runtime path. Portable writes are asynchronous; the flag alone creates no whitelist decisions or persisted endpoint authorizations. Endpoint persistence additionally requires the service configuration below. Without the flag, `serve` reads portable cache material without writing it. |
+| `teep serve --autocache` | Automatically persist eligible evidence/results after successful admission through the shared runtime path. Portable writes are asynchronous and create no whitelist decisions or runtime authorizations. Without the flag, `serve` reads portable cache material without writing it. |
 
-Service configuration additions are `cache_endpoint_persistence` (default `false`)
-and `cache_state_dir` (required only when persistence is enabled). Enabling it also
-requires `--autocache`; the mandatory durable writer is separate from asynchronous
-portable writes. `policy_state` is part of the cache artifact, not another whitelist
-input. Policy revisions and removal records are managed by explicit whitelist edits.
+Policy revisions and removal records belong to the cache artifact and are managed
+by explicit whitelist edits. There is no separate whitelist input.
 
 Cache path precedence is `--cache-file`, `$TEEP_CACHE_FILE`, configured `cache_file`,
 then `~/.config/teep/cache.yaml`, identically for `cache`, `serve`, and `verify`.
@@ -65,14 +62,11 @@ updates require proposal generation or explicit apply; there is no implicit cons
 
 `teep verify` imports eligible portable evidence and operator decisions, performs
 fresh endpoint admission, and never exports or updates cache state. It does not
-restore persisted endpoint authorizations. There is no separate `--whitelist` input.
+reuse a previous process's authorization. There is no separate `--whitelist` input.
 Replace `--update-config` and `--config-out` with the operator decision workflow in Phase 10.
 Existing `--force` is not a whitelist-selection or trusted-cache-generation option.
-Optional endpoint persistence is enabled only for `serve` by
-`cache_endpoint_persistence = true` plus `cache_state_dir`, with `--autocache` required.
-It defaults off and uses a separate mandatory durable writer. No additional CLI flag
-is assigned; ordinary `cache` and `verify` do not persist endpoint authorizations. See [commands and deployment](#5-commands-and-deployment)
-and [operator decisions](#5b-operator-decision-command-and-reporting) for detailed
+See [commands and deployment](#5-commands-and-deployment) and
+[operator decisions](#5b-operator-decision-command-and-reporting) for detailed
 validation, partial-failure, proposal, and acknowledgement rules.
 
 ### Evidence and runtime baseline
@@ -100,9 +94,10 @@ their runtime behavior until explicitly migrated.
 
 The proposed disk cache supports portable evidence and verified subjects across
 replicas, and operator decisions distributed through the deployment's trusted path.
-Optional persistence of a complete endpoint authorization extends the process-exit
-boundary only where durable invalidation is available. It must not be implemented
-as separate pin, report, and encryption-key files.
+Endpoint-authorization persistence is deferred beyond this implementation. Runtime
+authorizations end at process exit. Every restart performs fresh endpoint admission,
+using eligible portable evidence and verification results to reduce retrievals.
+This plan defines no cross-restart authorization format or lifecycle protocol.
 
 ### Provider scope and migration prerequisites
 
@@ -110,7 +105,7 @@ Initial cache support covers NearCloud, NearDirect, Tinfoil cloud, and Tinfoil
 direct. Chutes and Venice are planned extensions, **blocked until each provider
 migrates to the shared HTTP/2 attestation authorization machinery used by Near and
 Tinfoil**. This prerequisite applies to portable prefill, `--update-whitelist`,
-and endpoint persistence. HTTP/2 negotiation alone does not satisfy it.
+and automatic portable export. HTTP/2 negotiation alone does not satisfy it.
 
 Do not add adapters to legacy report/key caches, parallel admission paths, or
 provider-specific cache lifetimes to enable either provider early. Their migrations
@@ -160,7 +155,7 @@ The serialized classes describe persistence and operator-visible meaning. They d
 not require a parallel hierarchy of runtime stores. Adapt them to shared admission
 inputs and the existing unified authorization store through validated interfaces.
 Keep separate storage only where scope or semantics require it, such as portable
-artifact evidence, deployment policy decisions, and durable invalidation records.
+artifact evidence and deployment policy decisions.
 
 ### 2a. Evidence and verification records
 
@@ -326,9 +321,9 @@ An endpoint authorization references its full admission evidence and verified su
 report, immutable route scope, attested TLS identity, and required public E2EE key.
 All references must resolve and all required checks must be covered before atomic
 publication. No partially loaded authorization may become visible to requests.
-Both live admission and eligible disk restoration use the shared authorization
-constructor and publication path. Serialization must not expose a way to insert
-unchecked reports, pins, or keys directly into the runtime store.
+Fresh admission uses the shared authorization constructor and publication path.
+The portable format cannot insert reports, pins, or keys directly into the runtime
+authorization store. Incomplete evidence cannot authorize an endpoint.
 
 Scope follows the existing provider authorization key, not a universal
 `(provider, model)` tuple:
@@ -472,10 +467,10 @@ applicable policy in verification-result reuse scope. Content-addressed original
 bytes may be deduplicated without sharing policy conclusions. A format change
 requires fresh evaluation of its evidence coverage and enforcement policy.
 
-| Provider / format | Portable input prefill | Operator decisions | Unified runtime authorization / restoration |
+| Provider / format | Portable input prefill | Operator decisions | Unified runtime authorization |
 | --- | --- | --- | --- |
-| NearDirect / near | Model compose/images, eligible collateral | Applicable exact model software/measurement decisions | Existing shared runtime path; restoration requires the planned durable-state support. |
-| NearCloud / gateway plus model evidence | Separate gateway/model subjects and eligible shared collateral | Tier-specific decisions | Existing shared runtime path; restoration requires the planned durable-state support. |
+| NearDirect / near | Model compose/images, eligible collateral | Applicable exact model software/measurement decisions | Existing shared runtime path; fresh admission after restart. |
+| NearCloud / gateway plus model evidence | Separate gateway/model subjects and eligible shared collateral | Tier-specific decisions | Existing shared runtime path; fresh admission after restart. |
 | Tinfoil direct / V3 | Model release predicates, hardware references, eligible CPU collateral | Applicable model software/measurement decisions | Existing shared runtime path; each authority has its own scope. Live inference validation awaits the upstream billing fix (see Section 1). |
 | Tinfoil cloud / V3 | Router release and applicable CPU collateral; no independent backend software result | Gateway-scoped decisions | Existing router-scoped runtime path; do not infer backend attestation. |
 | Venice / dstack | Model compose/image evidence actually supplied and eligible Intel collateral | Applicable model-tier inventory classes | Blocked on shared authorization migration; all listed cache capabilities are post-migration candidates. |
@@ -496,19 +491,15 @@ circular prerequisite for completing the transport migration.
 
 ### 3a. Portable verification-result reuse
 
-Prefill has two levels:
+Prefill loads eligible evidence, verification results, and validated operator
+decisions into the stores consulted by shared admission. It reduces retrievals;
+it does not authorize an endpoint or reload a previous process's authorization.
 
-| Level | Material loaded | Shared destination and effect |
-| --- | --- | --- |
-| Verification inputs | Eligible evidence, verified subjects, and validated operator decisions | Populate the inputs/stores consulted by shared admission. They reduce retrievals but do not alone authorize an endpoint. |
-| Complete endpoint authorization | Eligible persisted report, authenticated public keys, transport identity, and admission references | Construct and atomically publish through the existing authorization store after restoration checks. Requests acquire it through the normal route/scope lookup. |
-
-The loader first performs strict parsing, provenance checks, build/policy and decision
-compatibility checks, and reference validation. For endpoint restoration it also
-checks deployment scope and durable invalidation. These are persistence-boundary
-checks, not replacements for production verification. Once material is published,
-request handling uses the normal acquisition path; it does not branch on disk versus
-network origin. Admission checks that need fresh evidence still run on new admission.
+The loader performs strict parsing, provenance checks, build/policy and decision
+compatibility checks, and reference validation. These checks do not replace production
+verification. Fresh admission always binds the current endpoint and keys to the
+required evidence before runtime publication. Requests then use the existing
+in-memory acquisition path.
 
 The portable verification-result lookup then proceeds as follows:
 
@@ -527,18 +518,18 @@ signatures may use authenticated signing-time semantics where the production
 verifier supports them; other validity checks apply at the new admission time.
 
 This is the upgrade boundary even though build identity is stored in evidence.
-A retained cache cannot restore trust withdrawn by the new package or policy.
+A retained cache cannot reinstate trust withdrawn by the new package or policy.
 No schema or internal API backward compatibility is required.
 
 ### 3b. Runtime authorization lifetime
 
-After live admission or eligible restoration, use the same runtime store and
+After live admission, use the same runtime store and
 retain the existing TLS/E2EE key-use lifetime. Do not add a `max_cache_age` deadline to authorizations, require the latest image release, or
 refresh attestation merely because collateral, certificates, or an NRAS JWT expire.
 On new admission, recheck NRAS time eligibility immediately before initial
 publication, then discard transient admission deadlines from the runtime
-authorization. Eligible restoration preserves that admission; it does not introduce
-a new NRAS expiry check solely because a new process publishes the restored record.
+authorization. A new process requires fresh admission and its normal NRAS
+eligibility checks; retained responses cannot satisfy a new report or nonce.
 
 Each new inference connection still requires TLS 1.3, WebPKI, CT, and applicable
 attested-SPKI validation before request bytes. Each request acquires authorization
@@ -552,57 +543,26 @@ eligible collateral may satisfy their respective subchecks. A cache miss never
 authorizes transmission by itself. Offline admission keeps its explicit factor
 policy and does not manufacture successful online results from cached booleans.
 
-### 3c. Endpoint restoration and invalidation
+### 3c. Restart and invalidation boundaries
 
-Endpoint restoration prefills the unified authorization store; it does not create
-a second store that requests can consult after invalidation. It is restricted to
-the same deployment, build, effective policy, and exact authorization scope. Deployments share portable software
-verified subjects within their configured policy; they do not distribute endpoint
-authorization as though it were an image-level fact. Resolve routes through the current
-provider contract. A saved NearDirect route must not override a newly selected
-route or current discovery validation.
+Endpoint authorizations remain in memory and end at process exit. Each new process
+resolves current routes and performs fresh admission through the shared verifier,
+using eligible portable inputs. This applies after both normal shutdown and crashes,
+including same-build restarts and read-only replicas. Never infer authorization from
+an intact historical report or an unchanged cached key.
 
-Durable invalidation and clean-owner state are prerequisites for endpoint restoration.
-Each `cache_state_dir` belongs to one service owner and is exclusively locked for
-that process lifetime; multiple owners may share the portable file but not this state.
-Read the predecessor's clean state, then durably mark this owner unclean before any
-restored or live authorization can be published. Only a drained shutdown with all
-required state and invalidation writes committed may mark the owner clean. If the
-predecessor was unclean, reject all its endpoint restoration and perform fresh
-admission using eligible portable evidence. An active ledger alone cannot close the
-crash interval between observing a trust failure and persisting its invalidation.
-See [the planning issue](supply_chain_caching_issues.md#endpoint-restoration-after-an-unclean-shutdown).
+Within the process, preserve generation-safe invalidation, eviction, and key-use
+lifetimes under the transport contract. Portable writes do not control runtime
+invalidation; an optional write failure does not invalidate an independently admitted
+endpoint. Incomplete or malformed cache input fails strict validation. An interrupted
+atomic file replacement leaves either the previous complete artifact or the new
+complete artifact; neither can reinstate an endpoint authorization after restart.
 
-Durable invalidation is a prerequisite for endpoint restoration:
-
-- Keep a deployment-owned writable record of invalidated persisted authorization
-  identities. Use a stable persisted identity distinct from process-local generation
-  counters. Assign a new runtime generation on restoration.
-- A failed request can invalidate only the persisted authorization it used and its
-  corresponding runtime generation. It cannot remove a replacement authorization.
-- Record invalidation before allowing future restoration. If recording fails,
-  fail closed for affected reuse and report the storage error. A restart must not
-  erase the failure and restore the same authorization.
-- Validate durable state before enabling restoration. Missing, malformed, or
-  unavailable invalidation state disables restoration; perform new full admission
-  instead. Define initialization and crash recovery so missing state is never
-  interpreted as proof that nothing was invalidated.
-- Runtime eviction must not immediately reload the evicted authorization from disk.
-  Require new admission after eviction, and preserve this exclusion across restart
-  when the evicted record remains in the file.
-
-A deployment that cannot provide durable invalidation, including a fully read-only
-replica, may load portable evidence and verified software subjects but must obtain fresh
-endpoint admission after each restart. Do not enable endpoint restoration there.
-An authenticated new admission may use the same keys again if current policy
-permits; invalidation does not permanently blacklist an otherwise valid key.
-
-Trust withdrawal still requires updated package/policy delivery and restart of
-every affected instance, as described in the
-[transport reference](../transport/README.md#approval-withdrawal). Preserve its
-limitation: retaining keys can retain an already admitted authorization until an
-explicit withdrawal reaches that instance. This plan adds no advisory feed or live
-policy reload. Endpoint persistence must not weaken the documented withdrawal path.
+Removing an operator decision changes affected effective policies. Distribute the
+updated artifact/package and restart affected instances to withdraw its runtime
+effect, as described in the [transport reference](../transport/README.md#approval-withdrawal).
+Evidence writers preserve current policy and cannot reintroduce removed decisions.
+This plan adds no advisory feed or live policy reload.
 
 ## 4. Portable material
 
@@ -728,7 +688,6 @@ lifetime, keyset admission conditions, conditional invalidation, and connection
 requirements before enabling any cache capability. Use the shared runtime path;
 do not preserve a parallel generic-cache integration for portable prefill. Similar
 captured gateway keys across models are not sufficient to enable router-wide reuse.
-Endpoint persistence additionally requires the durable-state rules in this plan.
 
 ### Required checks and diagnostic retrieval
 
@@ -835,7 +794,7 @@ apply only after their migration prerequisites are met.
 | --- | --- | --- |
 | NearDirect discovery | Default initial selection retrieves `/endpoints` and `/backends/count`; explicit-index selection needs membership metadata but not a count; configured static routes may need neither. | Preserve route selection rules. No recurring discovery for established selections; a portable image cache does not eliminate cold discovery. |
 | Tinfoil discovery | Model/backend mapping through `/.well-known/tinfoil-proxy` where required by the route. | Retain required discovery and its freshness policy. Do not use cached software to authorize stale route mappings. |
-| Endpoint attestation | One response per full admission on the normal first-attempt path. NearCloud's response includes gateway and selected model evidence. | Zero on eligible runtime reuse or endpoint restoration; fresh client-nonce request on new admission. Count gateway/backend verification separately from HTTP fetch count. |
+| Endpoint attestation | One response per full admission on the normal first-attempt path. NearCloud's response includes gateway and selected model evidence. | Zero on eligible in-process runtime reuse; fresh client-nonce request on new admission. Count gateway/backend verification separately from HTTP fetch count. |
 | NEAR and applicable Venice image transparency/provenance | For each queried digest: one Rekor index search; for each successful digest, another index search and one or more entry retrievals. Model/gateway digest sets are deduplicated before this pass. | Zero retrievals for complete matching cached evidence/results. On a miss, share lookup work and retain all material needed for verification, rather than repeating the index search. |
 | Tinfoil release evidence | Three explicit requests per repository: release tag, `tinfoil.hash`, and digest-addressed attestation bundle. A TDX admission also fetches the hardware-measurement repository. Sigstore TUF work is additional. | Zero release requests when retained signed predicates match the attested measurements under current policy. No latest-release request just to test freshness. |
 | Venice ACI/1 | A model-selected attestation request supplies gateway quote/compose/keyset; generic verification may also query gateway digest evidence, Intel collateral, PoC, and relayed GPU services. Custody signature verification itself is local. | Eliminate eligible repeated artifact/collateral retrievals only. Preserve fresh gateway admission and report-bound work; do not promise that absent model provenance becomes verified or that every gateway image has Sigstore material to cache. |
@@ -879,7 +838,6 @@ Avoid double-counting shared objects or already effective dependency caches.
 | --- | --- | --- |
 | Cold start without prepared material | None assumed | Required discovery, fresh attestation, software evidence, collateral, report-bound services, and dependency metadata. Establish the baseline. |
 | Prepared portable file, new replica | Matching verified subjects; locally eligible evidence | Discovery, fresh endpoint admission, NRAS/PoC where applicable, and only missing/ineligible dependency material. Cached image groups must issue zero requests. |
-| Same-build restart with eligible endpoint restoration | Complete persisted authorization and applicable durable state | Required route resolution and current TLS/CT operations; zero full-attestation, software, PCS, VCEK, NRAS, or PoC requests for the restored scope. |
 | Read-only replica restart | Portable file only | New endpoint admission and its report-bound checks. No promise of zero admission requests. |
 | Teep build update, evidence sufficient for local reevaluation | Recompute software verification and validate decision compatibility locally | Zero software retrievals; fresh endpoint admission remains required after build mismatch. Admission-time expiry may require collateral retrieval. |
 | Policy change or missing/new verifier dependency | Recompute only eligible facts under current policy | Fetch precisely the missing/ineligible dependencies. Report which requirement caused each request. |
@@ -896,7 +854,6 @@ Keep deterministic Tinfoil direct scenarios in this suite. Defer its live
 measurements under the Section 1 prerequisite, then run them against fixed
 endpoints; continue Tinfoil cloud live measurements independently.
 Mark all pre-migration Chutes/Venice cache scenarios blocked, not zero-call successes.
-After migration, mark endpoint restoration unsupported until separately enabled.
 For Chutes, cover nonce exhaustion/expiry, concurrent nonce consumption, same-key
 reuse, new instance/key admission, and independent model activity. Exercise dstack and ACI/1 concurrently at the same Venice
 origin, including a model changing response format; no cached model result may
@@ -949,18 +906,19 @@ hardware-scoped collateral, policy, eligible trust metadata, and the GPU evidenc
 shown. Count all teep-owned and library-owned HTTP requests, excluding the inference
 request itself. The complete portable examples target zero software, collateral,
 JWKS, TUF, and CT metadata retrievals. TLS handshakes and local checks still occur.
-`verify` adds its required live probe and always performs fresh admission; it cannot
-use the restoration column. "Complete validation" means every applicable check is
+`verify` adds its required live probe and always performs fresh admission. All
+process restarts use the portable-prefill columns, including same-build restarts.
+"Complete validation" means every applicable check is
 evaluated under effective policy, retaining permitted failures and provider limits;
 it does not imply that unavailable backend evidence becomes authenticated.
 
-| Example and route assumptions | Software-only prefill, other dependency stores cold | Complete portable prefill, same build | Build update, retained dependencies sufficient and eligible | Eligible same-build endpoint restoration |
-| --- | --- | --- | --- | --- |
-| 6a NearCloud: one response, gateway and backend TDX, backend GPU | 23 + CT requests | 14 | 14 | 0 |
-| 6b NearDirect: default selection with two discovery requests, TDX and GPU | 15 + CT requests | 10 | 10 | 2 discovery requests |
-| 6c Tinfoil direct: one route-discovery request, TDX and GPU | 14 + CT requests | 9 | 9 | 1 discovery request |
-| 6h Tinfoil cloud: fixed SEV router, no backend GPU evidence | 2 + CT requests | 1 | 1 | 0 |
-| 6e Venice ACI/1: selected model, gateway TDX and relayed GPU evidence, after migration | 13 + CT requests + any diagnostic image retrievals | 8, after diagnostic retrieval behavior is resolved | 8 under the same condition | Unsupported until separate restoration eligibility exists |
+| Example and route assumptions | Software-only prefill, other dependency stores cold | Complete portable prefill, same build | Build update, retained dependencies sufficient and eligible |
+| --- | --- | --- | --- |
+| 6a NearCloud: one response, gateway and backend TDX, backend GPU | 23 + CT requests | 14 | 14 |
+| 6b NearDirect: default selection with two discovery requests, TDX and GPU | 15 + CT requests | 10 | 10 |
+| 6c Tinfoil direct: one route-discovery request, TDX and GPU | 14 + CT requests | 9 | 9 |
+| 6g Tinfoil cloud: fixed SEV router, no backend GPU evidence | 2 + CT requests | 1 | 1 |
+| 6e Venice ACI/1: selected model, gateway TDX and relayed GPU evidence, after migration | 13 + CT requests + any diagnostic image retrievals | 8, after diagnostic retrieval behavior is resolved | 8 under the same condition |
 
 All columns that assume software reuse also require the required-versus-diagnostic
 classification above, including compose-only NEAR components. Remaining required
@@ -1002,12 +960,10 @@ for gateway and backend. Do not persist failure shortcuts as positive evidence.
 
 For 6d, a measurement decision replaces a local expected-value comparison and
 eliminates no quote/collateral requests by itself. Combine it with complete portable
-material. Example 6g illustrates relationships, not a complete provider scenario.
-Example 6f combines with 6a and its deployment-owned durable state to achieve its
-restoration budget; a read-only replica or build change instead uses fresh admission.
-Restoration can still need route discovery, new TLS handshakes, and ineligible CT
-metadata. A currently acquired runtime authorization needs no renewed admission;
-HTTP/2 reuse does not itself authenticate a new scope.
+material. Example 6f illustrates relationships, not a complete provider scenario.
+Every restart performs fresh admission using eligible portable material. A currently
+acquired in-memory authorization needs no renewed admission while its existing
+scope/lifetime remains valid; HTTP/2 reuse does not authenticate a new scope.
 
 Each primary example must have executable fixture coverage for all applicable
 columns. Assert zero network calls to every prepared dependency group with network
@@ -1130,8 +1086,8 @@ file only when `--autocache` is selected, using the same snapshot/export path as
 `teep cache`. Without this option, `serve` does not write portable evidence. A read-only cache destination
 supports image-layer deployment without attempted writes. Failed optional evidence write-back
 leaves a separately completed in-memory verification valid, emits an error, and
-must not claim persistence. This is distinct from mandatory durable invalidation
-for restored endpoint authorization, whose failure blocks affected reuse.
+must not claim persistence. Runtime invalidation remains governed by the existing
+in-memory authorization contract.
 
 ### Configuration and persistence controls
 
@@ -1139,26 +1095,6 @@ Use `cache_file` for the shared artifact path. Ordinary `serve` is a read-only
 portable consumer unless `--autocache` is selected; filesystem permissions provide
 the deployment's read-only restriction. No separate undefined read-only declaration
 is required. An autocache writer validates destination writability at startup.
-
-Optional endpoint persistence uses explicit service configuration:
-`cache_endpoint_persistence = false` by default, and `cache_state_dir` for a
-restricted deployment-owned writable state directory. Reject a missing state path
-when enabled and reject an unused state path when disabled. Require `--autocache`
-when enabling endpoint persistence so cache-file writing is explicit. This setting
-adds a separate mandatory durable writer; the optional evidence writer never becomes
-responsible for invalidation durability. A service may restore eligible endpoints
-and persist its own completed live authorizations only when this setting and its
-state directory pass startup validation. `cache` and `verify` never create or restore
-endpoint authorizations; these service-only settings have no effect on them.
-
-Endpoint persistence records only a complete successfully admitted authorization;
-any deferred required transport/E2EE usability check must first complete. Fsync the
-authorization and its durable-state relationship before claiming persistence.
-Classified invalidation/eviction uses the synchronous mandatory state path even if
-optional evidence writes are backed up. Failure follows Section 3c, not the optional
-writer's continue-serving rule. Missing initialization state requires fresh admission;
-explicit provisioning initializes a new state directory without trusting old endpoint
-records. Publish these config fields with Phase 13, not as usable earlier options.
 
 ### Admission and command completion
 
@@ -1171,7 +1107,7 @@ software and reports deferred usability separately. `verify` retains its live pr
 behavior and cannot report complete live verification when its required probe fails.
 An inference 429 may therefore leave valid cached software while making live `verify`
 fail. Shared checks must agree across commands; their completion criteria differ
-explicitly. Endpoint persistence has the stricter completion requirement above.
+explicitly. Runtime publication and E2EE-usability promotion retain their existing separate checks.
 
 ### Read-only policy validation with `teep verify`
 
@@ -1179,7 +1115,7 @@ explicitly. Endpoint persistence has the stricter completion requirement above.
 the same resolved cache path as `cache` and `serve`. It obtains fresh endpoint
 attestation and evaluates it through the same shared admission and effective-policy
 services. It may reuse eligible software evidence and collateral to avoid repeated
-retrievals, but must not restore persisted endpoint authorizations or substitute a
+retrievals, but must not substitute a
 previous endpoint report for current admission. Retain required online checks and
 verification probes; apply the Tinfoil direct live-validation prerequisite.
 
@@ -1271,9 +1207,8 @@ eligible shared state for export without waiting for filesystem I/O. If capacity
 is exhausted, retain a bounded dirty-state indication for later snapshot work and
 emit a diagnostic; do not create an unbounded queue or delay authorized inference.
 Use the same locked read-merge-write transaction as `teep cache`, preserving
-unrelated targets and operator decisions on disk. Reconcile current deletion and
-invalidation state before merging so delayed snapshots cannot restore withdrawn
-trust. Do not hold runtime store mutexes during disk I/O.
+unrelated targets and operator decisions on disk. Reconcile current policy revisions and removed-decision records before merging
+so delayed snapshots cannot reintroduce withdrawn decisions. Do not hold runtime store mutexes during disk I/O.
 
 Reject `--autocache` with a read-only cache destination or an unusable destination at
 startup, before accepting requests. Validate existing files strictly; the option
@@ -1285,13 +1220,11 @@ On orderly shutdown, attempt a bounded flush and report unfinished persistence.
 A crash may lose pending optional evidence writes; atomic replacement must preserve
 a valid committed file. Never claim that asynchronous enqueueing guarantees durability.
 
-The option alone covers portable evidence/results, not complete endpoint authorizations.
-Explicit endpoint-persistence configuration adds its separately enabled durable-invalidation contract;
-its mandatory writes must never use the optional writer's failure semantics.
-Exclude private keys, ephemeral encryption secrets, inference payloads, and
-consumable Chutes request nonces. Chutes and Venice remain blocked until their shared
-runtime migrations; PhalaCloud and NanoGPT remain outside scope. Apply the same
-provider eligibility checks to automatic export as to explicit cache targets.
+Automatic export contains portable evidence and verification results only.
+Never serialize TLS connections, session tickets, inference data, ephemeral secrets,
+or consumable Chutes request nonces. Chutes and Venice remain blocked until their
+shared runtime migrations; PhalaCloud and NanoGPT remain outside scope. Apply the
+same provider eligibility checks to automatic export as to explicit cache targets.
 
 ### 5a. Whitelist inventory
 
@@ -1490,7 +1423,6 @@ new components through additional records, without new field names.
 | `verification_material` | Typed collateral, certificates, issuer keys, and trust metadata, with lookup subjects, original inputs, verification dependencies, and admission eligibility. Shared independently of software and endpoint identities. |
 | `policy_state` | Deployment-policy authority, monotonic revision, and removed-decision digests. Required with decisions or removal history; absence denotes empty revision-zero policy. |
 | `operator_decisions` | Exact decision scope and subject, original failed-check evidence, explanation, and risk acknowledgements. These records never inherit authority from software results. |
-| `endpoint_authorizations` | Optional complete runtime admissions with explicit endpoint identity, report/evidence, software dependency selectors, and durable-state requirements. Omit for ordinary portable files. |
 
 `software` is the serialized form of the verified subjects described in Section 2.
 Each software record has a provider-independent `subject` and an `evaluations` list.
@@ -1550,7 +1482,7 @@ rejection, never newest-pass selection. Foreign-build evaluations may coexist bu
 cannot be used directly. Duplicate active keys in imported files fail validation;
 routine refresh/merge must resolve them before export. Never select by list position.
 
-Writers present policy state, software, verification material, and decisions first, optional endpoint records next, and
+Writers present policy state, software, verification material, and decisions first, with
 encoded evidence last. Use deterministic sorting for reviewable diffs, but do not
 interpret list order as semantic.
 
@@ -1646,7 +1578,7 @@ that fetcher isolated from ambient `$HOME/.sigstore` state and from other deploy
 The bounded-snapshot update semantics and withdrawal responsibility are recorded in
 [the planning issues](supply_chain_caching_issues.md#sigstore-trust-metadata-reuse).
 
-Examples 6a, 6b, 6c, 6e, and 6h are portable admission-prefill examples for their stated
+Examples 6a, 6b, 6c, 6e, and 6g are portable admission-prefill examples for their stated
 hardware and evidence. Their numeric budgets are in Section 4d. Populate real bytes
 and complete required checks before turning them into fixtures. The Intel examples
 assume processor-CA collateral; actual quote-derived CA and platform scope control
@@ -1663,8 +1595,7 @@ This example shows four model components and seven gateway components. Membershi
 comes from each actual compose. Shared OpenTelemetry provenance has one evidence
 record and distinct model/gateway policy evaluations. Current NEAR `NoDSSE` entries
 show `dsse_signature: not_required`, not a signature success. The model and gateway
-compose bindings themselves must be established by fresh endpoint admission or an
-eligible restored authorization; portable software checks alone do not authenticate
+compose bindings themselves must be established by fresh endpoint admission; portable software checks alone do not authenticate
 a new endpoint.
 
 ```yaml
@@ -2878,138 +2809,7 @@ evidence:
   encoding: percent_encoded_pem
 ```
 
-### 6f. Optional endpoint persistence references software by identity
-
-Ordinary portable files omit this collection. This NearCloud fragment shows the
-relationship to two complete software records using their actual semantic selectors,
-not a local stanza ID. Tinfoil cloud selects gateway release sets under its
-model-independent router scope; direct selects model release sets and its resolved
-model authority. Neither uses one connection or authorization per component.
-
-```yaml
-schema_version: 1
-endpoint_authorizations:
-- scope:
-    provider: nearcloud
-    model: example-model
-    authority: cloud-api.near.ai
-  deployment:
-    identity: "<deployment identity>"
-    persisted_authorization: "<durable authorization identity>"
-  identity:
-    tls_spki_sha256: "<gateway SPKI>"
-    backend_tls_spki_sha256: "<attested backend; not live gateway TLS peer>"
-    model_ed25519_public_key: "<attested model key>"
-  admission:
-    context:
-      verifier_build: sha256:<teep build>
-      policy: sha256:<complete NearCloud admission effective policy>
-    evidence:
-    - sha256:<nearcloud original response envelope>
-    - sha256:<historical backend NRAS JWT>
-    - sha256:<historical backend Proof of Cloud response>
-    - sha256:<historical gateway Proof of Cloud response>
-    report: sha256:<complete immutable admission report>
-    software:
-    - scope:
-        provider: nearcloud
-        tier: model
-        evidence_format: near
-      subject:
-        kind: compose
-        digest: sha256:<model compose>
-        encoding: app_compose_json
-      policy: sha256:<nearcloud model effective policy>
-    - scope:
-        provider: nearcloud
-        tier: gateway
-        evidence_format: dstack
-      subject:
-        kind: compose
-        digest: sha256:<gateway compose>
-        encoding: app_compose_json
-      policy: sha256:<nearcloud gateway effective policy>
-    decisions: []
-    evaluated_at: '2026-09-13T00:00:00Z'
-    completion:
-      required_non_deferred_checks: satisfied_effective_policy
-      e2ee_usable: pass
-  durable_state:
-    state_identity: "<deployment state identity>"
-    authorization_identity: "<durable authorization identity>"
-    creation_revision: 12
-evidence:
-- digest: sha256:<complete immutable admission report>
-  kind: verification_report
-  payload_base64: >-
-    <complete original normalized immutable admission report, including actual failed checks and
-    permitted exceptions>
-- digest: sha256:<historical backend NRAS JWT>
-  kind: nras_response
-  payload_base64: "<original signed response and report-binding metadata for the admitted backend
-    GPU payload>"
-- digest: sha256:<historical backend Proof of Cloud response>
-  kind: proof_of_cloud_response
-  payload_base64: "<original response bound to the admitted backend quote>"
-- digest: sha256:<historical gateway Proof of Cloud response>
-  kind: proof_of_cloud_response
-  payload_base64: "<original response bound to the admitted gateway quote>"
-```
-
-Combine this extension with all software, material, and evidence records in 6a
-into one cache artifact; this is an example relationship, not a YAML include or a
-second cache-input flag. Identical evidence digests occur once. The additional
-report and historical service responses above explain the completed admission;
-they cannot authorize a new nonce or report. Before executable fixture coverage,
-populate the full report, exact required encryption identity, and every dependency
-used by the production authorization constructor. Do not retain inference payloads
-or ephemeral secrets to demonstrate a successful E2EE check.
-
-The service's separate restricted `cache_state_dir` contains the authoritative
-state represented below. This is a distinct durable-state schema, not a second
-portable trust artifact. Its deployment and state identities must agree with the
-endpoint record. The binding digest covers the canonical complete persisted
-authorization, so replacing its report/identity/dependencies cannot reuse the entry.
-
-```yaml
-schema_version: 1
-kind: endpoint_persistence_state
-deployment_identity: "<deployment identity>"
-state_identity: "<deployment state identity>"
-owner_clean: true
-revision: 12
-authorizations:
-- identity: "<durable authorization identity>"
-  authorization_digest: sha256:<canonical complete persisted authorization>
-  creation_revision: 12
-  state: active
-- identity: "<previous invalidated authorization identity>"
-  authorization_digest: sha256:<previous persisted authorization>
-  creation_revision: 10
-  state: invalidated
-  invalidated_at_revision: 11
-```
-
-An authoritative `active` entry is necessary, not sufficient: apply all Section 2c
-and 3c restoration checks, including current deployment/build/policy and scope.
-This file is never imported from a portable evidence bundle. `owner_clean: true`
-represents a fully drained predecessor, not a status an active process may retain.
-Startup commits `owner_clean: false` before publishing any authorization; an unclean
-predecessor requires fresh admission even when individual entries say active. Commit invalidation
-or eviction through the mandatory writer before later restoration can succeed;
-missing state is not an empty invalidation set. Restore only a matching committed
-pair after crash recovery. Policy/configuration rollout must protect both files
-against rollback. The illustrative ledger layout must retain these invariants
-when the implementation defines crash-safe storage and retention.
-
-The combined artifact and durable state satisfy the dependency layout required by
-the Section 2c and durable-state contracts once populated and verified. These fields describe inputs to
-the shared authorization constructor, not a bypass for report/key publication.
-The backend fingerprint remains evidence about the backend, never the gateway TLS
-peer. No consumable nonce pool, TLS connection, session ticket, or ephemeral secret
-is serialized. `verify` always performs fresh admission even when these records exist.
-
-### 6g. One subject, separate consumer evaluations and exceptions
+### 6f. One subject, separate consumer evaluations and exceptions
 
 This compact hypothetical compose has one component; it demonstrates relationships,
 not the membership of a production NEAR compose. The original compose bytes are
@@ -3134,7 +2934,7 @@ records existing explicit policy exceptions; it is not a list of new decisions o
 successful checks. The effective-policy hash includes these dependencies. Every
 referenced decision and prerequisite must resolve before a result is reusable.
 
-### 6h. Tinfoil cloud: SEV router admission prefill
+### 6g. Tinfoil cloud: SEV router admission prefill
 
 This companion example includes the router release, its Sigstore trust dependencies,
 the applicable AMD VCEK, and CT metadata. It contains no backend model authorization.
@@ -3317,7 +3117,7 @@ never drop a malformed entry and continue with the rest. Checks in examples are
 illustrative typed checks, not new report factor names.
 
 Validate ownership, restrictive permissions, regular-file type, and absence of
-symlinks for cache and durable state paths. Use safe file opening and replacement
+symlinks for cache paths. Use safe file opening and replacement
 to prevent path substitution between validation and access. No group/world writable
 trust files. Treat read-only image-layer files as deployment inputs with equivalent
 integrity guarantees. Preserve complete evidence on export; URLs alone are not an
@@ -3328,8 +3128,8 @@ beside the shared data-management code. Keep filesystem decoding and locking out
 request handlers. Reuse existing runtime synchronization, authorization capacity,
 generation ownership, and cancellation semantics rather than wrapping them in a
 competing cache. Coordinate prefill and live publication under the same ownership
-rules: a delayed load cannot overwrite a newer authorization or restore one already
-invalidated. Perform disk and network I/O outside the runtime store mutex; recheck
+rules: imported inputs cannot overwrite a newer runtime authorization or bypass
+an invalidation; any new authorization requires fresh admission. Perform disk and network I/O outside the runtime store mutex; recheck
 publication eligibility under synchronization before publishing the result.
 
 A snapshot exports a complete dependency graph for each successful set. Canonicalize
@@ -3358,34 +3158,20 @@ needed by another. Retain independent routing/discovery stores.
 Use process-local synchronization for memory and a separate lock file for the
 cross-process read-merge-write transaction. Under the lock, reread, validate, merge
 without reviving invalidated records, write a restricted temporary file, sync,
-rename atomically, and sync the containing directory. Define crash-safe ordering
-between authorization publication and durable invalidation. Lock files must survive
+rename atomically, and sync the containing directory. Lock files must survive
 cache-file replacement. Disjoint provider updates preserve each other's objects;
 reference-aware collection must not delete evidence used by another verified subject.
 
 Use a fixed lock order: acquire the file transaction lock without a runtime mutex;
 load the authoritative artifact and policy revision; validate the immutable snapshot
 against that state; resolve additions/removals and collect references; write/sync the
-replacement; release the file lock. Runtime publication/invalidation rechecks its own
-generation after any required disk work. Never acquire a file lock while holding the
+replacement; release the file lock. Runtime publication/invalidation independently rechecks its own generation;
+optional disk writes never delay those operations. Never acquire a file lock while holding the
 runtime authorization mutex. A cancelled observer cannot cancel a transaction another
 client needs; writes have a bounded owner context.
 
-For endpoint persistence, write/sync the authorization object first, then commit/sync
-its digest-bound active ledger entry before claiming persistence. A crash between
-those steps leaves an unreferenced, unrestorable object. Invalidation/eviction must
-prevent acquisition of that generation in memory while its invalidated ledger state
-is synchronously committed; a failed commit blocks affected reuse. An interrupted
-invalidation must not leave an old active authorization restorable: maintain a
-write-ahead invalidation intent, treat any incomplete intent as invalidated on restart,
-and never acknowledge durable completion before directory synchronization. Retain
-state and intents under the separate deployment-owned directory; evidence-file
-replacement cannot reset them. Storage tests must exercise every boundary and the
-existing authorization generation race checks together. Offline whole-directory
-rollback remains a trusted deployment responsibility, not a property of YAML revisions.
-
-An optional evidence write failure can leave verified memory state intact. A
-mandatory persistence failure cannot be converted to success. Logs identify target,
+An optional evidence write failure can leave verified memory state intact. Explicit
+cache writes and policy-edit transactions must report their persistence failures. Logs identify target,
 check, and failure without API keys, inference content, or private key material.
 
 ## 8. Planning findings and implementation phases
@@ -3421,8 +3207,8 @@ it consumes the shared candidate and retains its constructor/publication checks.
 `verify` always calls fresh collection/evaluation and then its required probe, without
 acquiring proxy runtime authorization. `cache` uses the same collection/evaluation
 and exports after non-deferred checks. Serving promotes E2EE usability only for the
-generation/model that actually completed it; portable export and persisted complete
-authorization therefore have distinct eligibility boundaries. Do not move probe or
+generation/model that actually completed it. Portable export does not require a
+successful inference response; live E2EE usability retains its own completion checks. Do not move probe or
 retry policy into a second cache orchestration path.
 
 Material lookup/population and policy projection are specified in Sections 2e, 4,
@@ -3435,7 +3221,7 @@ planning prototypes do not replace them.
 
 
 
-Implement Phases 0 through 13 in order. Each phase builds on the completed preceding
+Implement Phases 0 through 11 in order. Each phase builds on the completed preceding
 phases; it is not independently applicable to an earlier checkout. Each phase must
 produce one reviewable commit with a complete implementation, tests, and maintained
 documentation for the behavior it introduces. If a phase proves too large for one
@@ -3471,9 +3257,7 @@ that needs them, with all existing callers and tests updated in that commit.
 | Consumption of exact operator decisions through shared effective policy | 9 |
 | Goal 2: reviewed whitelist authoring, proposals, and withdrawals | 10 |
 | Automatic portable persistence during serving | 11 |
-| Optional endpoint persistence and restoration | 13, after durable-state acceptance in 12 |
 
-Optional endpoint persistence remains part of this sequence and defaults off.
 Chutes/Venice enablement and unresolved elevated decision classes are separate
 conditional extensions described below; they do not block Near/Tinfoil delivery.
 Each phase updates the documentation identified in
@@ -3531,7 +3315,7 @@ Test unchanged live outcomes, complete report/key/identity publication, required
 NRAS admission-time checks, cancellation isolation, eviction, replacement races,
 and unrelated HTTP/2 streams. Test prefill/publication ownership through the actual
 shared services using verified in-memory inputs; disk encoding belongs to Phase 2.
-No new CLI or disk restoration is enabled in this phase.
+No new CLI is enabled in this phase.
 
 ### Phase 2: Portable artifact storage
 
@@ -3539,7 +3323,7 @@ Implement strict decoding, canonical software/material identities, build and sco
 policy identities, explicit dependency resolution, validated import, immutable export,
 and bounded reference-aware storage. Define the typed-list envelope and supported-kind
 dispatch used by later adapters. Include the empty policy-state contract; nonempty
-operator policy remains unsupported until Phase 9. Keep endpoint restoration disabled.
+operator policy remains unsupported until Phase 9.
 
 Implement secure file access and the cross-process read/validate/merge/write transaction:
 separate stable lock file, restrictive temporary files, fsync, atomic replacement,
@@ -3606,7 +3390,7 @@ limits, including explicit failure of unsupported release enumeration. Exercise 
 missing dependencies, scoped policy changes, and local build-update reevaluation.
 Deny eligible release/TUF retrievals and count cold discovery separately. Preserve
 router sharing and direct authority isolation. These tests complete the release
-portion of examples 6c/6h; CT prefill follows in Phase 7.
+portion of examples 6c/6g; CT prefill follows in Phase 7.
 
 ### Phase 6: NVIDIA key-material reuse
 
@@ -3653,13 +3437,13 @@ loaded artifact/build/policy; no-cache verification must not claim policy-rollou
 validation. Test fresh admission, deferred usability versus required live probes,
 and absence of cache/decision writes from `verify` or ordinary `serve`.
 
-Make Near/Tinfoil examples 6a, 6b, 6c, and 6h executable fixtures with real signed
+Make Near/Tinfoil examples 6a, 6b, 6c, and 6g executable fixtures with real signed
 bytes. Assert the complete same-build and build-update budgets in Section 4d with
 prepared groups denied network access, independent cold replica state, and remaining
 live calls counted. Exercise cross-command enforcement equivalence, scoped policies,
 multi-component failure, and partial success. Include multi-model/cloud-router scope
-and concurrent clients. This phase delivers Goal 1; operator decisions, autocaching,
-and endpoint persistence remain disabled until their respective phases.
+and concurrent clients. This phase delivers Goal 1; operator decisions and autocaching
+remain disabled until their respective phases.
 
 ### Phase 9: Operator policy evaluation
 
@@ -3730,45 +3514,7 @@ cache-command/service writers, queue saturation, read-only conflicts, slow/faile
 recovery, shutdown flush, and stale snapshots racing policy withdrawal/reintroduction.
 Prove optional write failure leaves independently completed in-memory authorization
 usable, does not claim persistence, and cannot revive removed decisions or overwrite
-another consumer's evaluation. Endpoint persistence remains disabled.
-
-### Phase 12: Durable endpoint state
-
-Implement the deployment-owned persisted-authorization binding and invalidation ledger,
-secure state access, mandatory durable writer, exclusive-owner clean/unclean state, committed-pair
-validation, and crash recovery described in Sections 3c and 6f. Keep this separate from optional evidence
-write-back. Define initialization and bounded retention without interpreting missing
-history as proof that an old authorization remains valid. Use the shared generation
-identity and classification contracts; do not publish restored runtime authorization.
-
-Test exclusive ownership, durable unclean marking before publication, clean marking
-only after drained shutdown, refusal of unclean-predecessor restoration,
-state/authorization digest binding, invalidation and eviction transactions,
-missing/corrupt/read-only state, deployment mismatch, stale records, interrupted writes,
-and crashes at each ordering boundary. Verify an old generation cannot invalidate a
-replacement and a committed invalidation cannot disappear through ordinary cache
-replacement. Exercise the documented deployment responsibility for whole-state rollback;
-a self-declared revision is not independent rollback protection. No endpoint-persistence
-configuration or restoration is enabled until Phase 13 connects these tested services.
-
-### Phase 13: Endpoint persistence and restoration
-
-Enable default-off `cache_endpoint_persistence` and `cache_state_dir` configuration,
-requiring `serve --autocache` and validated durable state. Persist only complete eligible
-live authorizations, including required transport/E2EE usability. Restore through the
-same constructor, publication, acquisition, and invalidation paths as live authorization.
-A restored authorization must satisfy current deployment/build/policy/scope requirements.
-Mandatory invalidation failures retain their fail-closed behavior even when the optional
-portable writer is slow or unavailable.
-
-Test configuration validation, new-state provisioning, complete 6a/6f companion fixtures,
-clean same-build restoration budgets, unclean-shutdown and build/policy-change fresh admission, route changes,
-missing state, eviction, failed keys, concurrent streams, and crashes across runtime/disk
-boundaries. Verify stale requests cannot delete replacements and affected authorizations
-cannot reappear after restart. Test live E2EE completion and inference rate limits versus
-portable export eligibility. `cache` and `verify` never create or restore endpoint
-authorization; verify must perform fresh admission even when such records exist.
-Update transport lifetime and storage references with this behavior in the same commit.
+another consumer's evaluation. Restart always requires fresh endpoint admission.
 
 ### Conditional extensions: provider enablement and elevated decisions
 
@@ -3788,7 +3534,8 @@ provenance, unbound metadata, custody/app-ID/KMS failures, and expired keysets. 
 [concurrent-format coverage](../../internal/integration/venice_concurrent_formats_test.go),
 and [custody/keyset tests](../../internal/provider/venice/keyset_test.go). Make example 6e
 executable and assert its conditional budgets. Never promote exempted failures or
-absent backend evidence into verified results; reject restoration until eligible.
+absent backend evidence into verified results. Fresh admission remains mandatory
+after restart.
 
 Chutes covers chute/instance/key scope, ML-KEM binding, consumable nonce ownership,
 nonce exhaustion/expiry/replenishment, concurrent consumption, and exact MRTD/MRSEAM
@@ -3814,8 +3561,8 @@ The paths below are planned files; add working links when the files are created.
 
 | Document | Authoritative content |
 | --- | --- |
-| `docs/cache/README.md` | Entry point: purpose, terminology, architecture, both prefill levels, command/configuration reference, deployment modes, and links to detailed contracts and implementation entry points. |
-| `docs/cache/storage.md` | Typed-list schema, nested component verification contexts, software and typed verification-material selectors, explicit dependencies and admission eligibility, content-addressed evidence, operator decisions, and optional endpoint records; build/policy identity; validated import/prefill and immutable export; file integrity; atomic writes; concurrency; upgrade compatibility; restoration eligibility and durable invalidation storage. Include representative YAML for NearCloud, NearDirect, and both Tinfoil modes. |
+| `docs/cache/README.md` | Entry point: purpose, terminology, architecture, portable prefill and runtime admission, command/configuration reference, deployment modes, and links to detailed contracts and implementation entry points. |
+| `docs/cache/storage.md` | Typed-list schema, nested component verification contexts, software and typed verification-material selectors, explicit dependencies and admission eligibility, content-addressed evidence, operator decisions; build/policy identity; validated import/prefill and immutable export; file integrity; atomic writes; concurrency; upgrade compatibility; fresh-admission requirements after restart. Include representative YAML for NearCloud, NearDirect, and both Tinfoil modes. |
 | `docs/cache/operator-decisions.md` | `--update-whitelist` interactive selection, proposal generation and explicit apply, exact subject scope, supported/unsupported and elevated-risk classes, acknowledgements, retained checks, diagnostics, decision deployment/removal, and interactions with existing policy controls. |
 | `docs/cache/testing.md` | Request-count methodology and scenario budgets, live/prefill equivalence, concurrency and persistence-failure coverage, commands to reproduce checks, and links to actual regression tests. |
 
@@ -3827,12 +3574,11 @@ key-use lifetime, eviction, and invalidation effects authoritative in
 references describe how persisted material enters that shared machinery and link
 to those contracts instead of maintaining another copy of them.
 
-`docs/cache/storage.md` owns persisted-record eligibility, durable invalidation
-format, crash recovery, and disk transaction ordering. The transport reference
-links there when explaining restoration across restart and preventing a persisted
-record from restoring invalidated trust. In the other direction, storage links to
-the transport rules that identify which failures invalidate which authorization.
-Document the interface between the two subjects; do not duplicate their full rules.
+`docs/cache/storage.md` owns portable-record eligibility, dependency validation,
+atomic file replacement, and policy-preserving transactions. The transport reference
+links there for admission prefill and explains that runtime authorizations end at
+process exit. Storage links to the transport's live scope and invalidation contracts;
+do not duplicate those rules or specify cross-restart authorization behavior.
 
 Keep provider-specific routing, gateway/backend boundaries, evidence limitations,
 and public-key semantics in the provider references. Those documents link to the
@@ -3842,8 +3588,7 @@ specifications. Create `docs/providers/venice/venice_support.md` for both dstack
 ACI/1, including configuration, endpoints, routing, evidence, gateway/backend trust
 boundaries, E2EE/custody, supply-chain provenance, factor exemptions, cache capability
 matrix, and tests. Link it from the cache entry point and retain a link to the
-[Venice ACI gap analysis](../attestation_gaps/venice_aci_gateway.md). Do not describe unimplemented restoration or decision classes as
-supported behavior. Create `docs/providers/chutes/chutes_support.md` with the same
+[Venice ACI gap analysis](../attestation_gaps/venice_aci_gateway.md). Do not describe unimplemented decision classes as supported behavior. Create `docs/providers/chutes/chutes_support.md` with the same
 coverage, plus chute/instance routing, ML-KEM key binding, consumable nonce ownership,
 measurement decisions, and the lack of client image-provenance evidence. Link its
 [sek8s gap analysis](../attestation_gaps/sek8s_integrity.md). Both references must
@@ -3861,7 +3606,7 @@ short task-to-reference mapping to its directory/documentation guidance:
 | --- | --- |
 | HTTP/TLS transport or runtime authorization | `docs/transport/README.md` |
 | Evidence reuse, cache schema, persistence, or `teep cache` | `docs/cache/README.md` |
-| Prefill, endpoint restoration, or invalidation across restart | Both cache and transport entry points |
+| Portable prefill and fresh admission after restart | Both cache and transport entry points |
 | Operator pins or policy exceptions | `docs/cache/operator-decisions.md` and the applicable provider policy reference |
 
 Mirror relevant guidance in [.github/instructions](../../.github/instructions/)
@@ -3899,15 +3644,13 @@ must identify migration blockers rather than suggesting incomplete cache support
 | 9 | Create/update `operator-decisions.md` for supported exact classes, prerequisites, effective policy, decision consumption, retained failures, and upgrade/withdrawal semantics. Update AGENTS.md and affected review instructions when exceptions become usable. |
 | 10 | Publish interactive/proposal/withdrawal workflows, reasons, revision conflicts, partial/shared scope, deployment instructions, and replacement of old policy-edit inputs. Keep help and configuration examples consistent. |
 | 11 | Document autocache opt-in, admission/export boundary, bounded asynchronous writes, errors, policy-preserving transactions, and restart budgets. |
-| 12 | Document durable-state binding, mandatory transaction ordering, initialization, exclusive ownership and clean-shutdown eligibility, crash recovery, retention, and deployment rollback responsibility. State that restoration is not yet enabled. |
-| 13 | Publish endpoint-persistence configuration, complete artifact/state examples, exclusions, restoration budgets, and failure behavior; update transport and provider references as the process-exit boundary changes. |
 | Conditional extensions | Update provider capability matrices and per-class decision references with their implementing commits. Add newly supported examples, budgets, regression links, and security/review rules without changing the core contracts implicitly. |
 
 Before completing the implementation, check that all references are reachable from
 AGENTS.md and the repository entry points, links and test names resolve, YAML and CLI
 examples match the implemented schema and flags, and each shared rule has one
 authoritative home. Verify that the cache and transport descriptions agree on
-restoration, lifetime, and invalidation. Keep measured run output in test artifacts;
+fresh admission after restart, lifetime, and invalidation. Keep measured run output in test artifacts;
 the maintained docs describe contracts, methodology, and supported behavior.
 
 At implementation completion, mark this plan as completed design context and link
@@ -3920,9 +3663,8 @@ running implementation/validation log.
 
 Material research limitations and operator consequences are recorded in
 [the planning issues](supply_chain_caching_issues.md). These include unsupported older-release
-enumeration, bounded TUF snapshot reuse, ordinary-decision prerequisites, and clean-owner
-endpoint restoration. They do not introduce additional CLI flags.
-
+enumeration, bounded TUF snapshot reuse, ordinary-decision prerequisites, and
+fresh-admission costs after restart. They do not introduce additional CLI flags.
 
 The following discussions provide source context; the requirements are specified
 in this document:
