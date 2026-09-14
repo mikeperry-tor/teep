@@ -72,6 +72,8 @@ updates require proposal generation or explicit apply; there is no implicit cons
 fresh endpoint admission, and never exports or updates the cache file. It does not
 reuse a previous process's authorization. There is no separate `--whitelist` input.
 Replace `--update-config` and `--config-out` with the operator decision workflow in Phase 10.
+Retain validated measurement-policy configuration as base policy, including its
+ability to restrict the measurements accepted from the built-in defaults.
 Existing `--force` is not a whitelist-selection or trusted-cache-generation option.
 See [commands and deployment](#5-commands-and-deployment) and
 [operator decisions](#5b-operator-decision-command-and-reporting) for detailed
@@ -180,9 +182,32 @@ unnecessary online retrievals is the optimization. Missing or ineligible inputs 
 the normal authenticated retrieval path. This applies equally to unchanged builds
 and upgrades, including every required material freshness check.
 
-Runtime evaluations record exact evidence/subject identities, projected policy,
-actual checks, failures, exemptions, and transient eligibility. They may be shared
-within the owning process when their inputs and policy match. The portable format
+Only validated evidence enters reusable material storage or portable export.
+Keep newly fetched or decoded inputs in bounded staging until the owning production
+verifier establishes their authenticity, structure, subject relationships, and
+type-specific eligibility. A digest match or successful download is insufficient.
+Software export additionally requires the successful-target boundary in Section 5.
+Malformed or cryptographically invalid inputs never become reusable evidence.
+Authenticated TUF transitions and explicitly reviewed decision observations retain
+their separate validation boundaries; neither represents a passed software check.
+An `allow_fail` admission does not make the failed material check cache-eligible.
+Retained material that has since expired can remain stored, but cannot satisfy a
+new admission until its current eligibility requirements are met.
+
+Defer memoization of software and admission-subcheck verification results beyond
+this plan. Each new admission runs the local cryptographic and policy checks over
+selected evidence, even if another admission previously validated those bytes.
+Share validated bytes and coalesce retrieval; do not add a cache of successful
+component evaluations or their dependency-invalidation machinery. Imported inputs
+must pass current typed validation before promotion from staging to reusable stores.
+The existing runtime authorization cache and bounded shared full-admission path
+remain unchanged: requests covered by an acquired authorization do not repeat
+admission. Existing material-owner mechanisms such as parsed JWKS storage and CT
+certificate checking retain their documented checks and eligibility.
+
+Runtime evaluations belong to the admission that produced them and record exact
+evidence/subject identities, applicable policy, actual checks, failures, exemptions,
+and transient eligibility. The portable format
 contains evidence, descriptive subject/input relationships, trusted retrieval and
 TUF state, and explicit operator decisions only. Reports describe the current run;
 serialized result flags cannot authorize reuse.
@@ -227,9 +252,9 @@ The same child bytes can be shared whether fetched directly, stapled by a gatewa
 or loaded from disk. Different envelopes do not prevent sharing an identical child;
 different child bytes must not be merged because their fields look similar. Matching
 component repository/digest pairs permit artifact evidence sharing even when complete
-compose subjects differ. Reuse consumer policy results only through explicit shared
-checks with equivalent trust roots, identity requirements, tier applicability, and
-exemptions; matching provider lineage or signing keys alone is insufficient.
+compose subjects differ. Each new admission evaluates its own trust roots, identity
+requirements, tier applicability, and exemptions over those bytes; matching provider
+lineage or signing keys does not share a consumer policy result.
 
 Fresh gateway/backend admission remains bound to the caller's nonce and selected
 model/key/route. A saved stapled quote cannot answer a later nonce. A shared backend
@@ -248,9 +273,9 @@ A stored subject is not an approval. Each consumer evaluates it under current
 provider/tier policy. A verified subject exists only with an eligible runtime
 evaluation; disk input cannot create one by asserting success.
 
-Two NEAR endpoints with the same compose/image digests can share evidence and
-eligible in-process subchecks. Sharing bytes between providers does not share signer
-policy. Component evaluations have independent projected policies; complete-set
+Two NEAR endpoints with the same compose/image digests can share validated evidence.
+Each new admission evaluates every component under its own signer and tier policy;
+sharing bytes between providers does not share policy results. Complete-set
 coverage depends on membership/binding rules and all required component evaluations.
 
 Live attestation must still bind that software to the endpoint. Complete compose
@@ -262,8 +287,8 @@ prove an image digest absent from the attested configuration.
 One CVM authorization can depend on several component repositories and artifact
 versions. Model and gateway tiers each need an explicit complete component set;
 neither the primary application repository nor a successful first component stands
-for the whole environment. Keep per-component subjects/results independently
-reusable in memory and include their identities in complete-set evaluation.
+for the whole environment. Keep per-component evidence independently reusable in
+memory and evaluate every required component during each new admission.
 Persist the corresponding evidence and component identities. An endpoint
 references the complete sets required by its admission, not one representative image.
 
@@ -271,7 +296,7 @@ Component repositories are record values, never predefined YAML field names or
 parser branches. Store arbitrary-length component collections within the schema's
 bounds. Nest component identities and evidence references under readable software records.
 Use content digests for evidence and exact subject selectors for software. Runtime
-evaluations additionally carry consumer scope and projected policy. Validate digest integrity and selector
+evaluations additionally carry consumer scope and applicable policy. Validate digest integrity and selector
 uniqueness. No local record names or list positions carry identity or trust. Section 6
 defines the common serialization; runtime stores need not mirror that hierarchy.
 
@@ -295,7 +320,7 @@ Derive required membership from the exact bound compose or supported authenticat
 release/measurement relationships, not every repository in a provider allowlist.
 Policy lists include alternatives, not necessarily co-resident components. Check
 set membership, each component's required provenance, and aggregate coverage before
-publishing a reusable complete-set result. A compose-only component has a policy
+publishing an authorization or exporting the complete set's evidence. A compose-only component has a policy
 result, not a fabricated image signature. A valid signature without its required
 measurement/compose relationship does not establish deployment coverage.
 
@@ -379,6 +404,23 @@ policy passed. Keep the underlying outcome and show `operator_decision_applied`
 with the decision reference in diagnostics. Existing `allow_fail` remains a separate
 factor-wide policy control; a pin is a narrower subject-specific decision.
 
+Retain the existing model/gateway measurement allowlists in validated configuration
+as base policy. Preserve `MergedMeasurementPolicy` and
+`MergedGatewayMeasurementPolicy` semantics: for each register, a nonempty
+per-provider list replaces the global list, which replaces the built-in list.
+Replacement can narrow the accepted measurements; do not convert it to a union
+with defaults. These configured expected values are supplied by the operator,
+not generated from observations by the cache command. Removing automated config
+editing does not remove or reinterpret this base-policy input.
+
+Evaluate decisions against that resolved base policy and preserve any applicable
+explicit `allow_fail` outcome separately. A decision can explicitly permit its
+supported named failure, but absence of a decision cannot expand a restrictive
+configured list. Reports and proposals include the configured base policy in their
+identity and show any decision that permits a value it rejects. Changing a relevant
+configured list makes a proposal stale and requires renewed review. No second
+whitelist file or new restriction schema is needed.
+
 A runtime evaluation records only properties actually verified. Where a decision
 was used, reference its digest and retain the failed base check in the current report.
 The decision retains its original observation inputs and named failure, not a
@@ -386,14 +428,13 @@ portable assertion that prerequisite verification passed. A subject admitted sol
 to `operator_decisions`, not to a fabricated signature-verification result. Endpoint
 authorizations can reference both verified subjects and applicable operator decisions.
 
-Effective policy identity is scoped to the operation being evaluated. Hash the
-canonical applicable base rules, trust roots, required checks, exemptions, and exact
-active decisions relevant to that subject/provider/tier. Software subchecks and
-endpoint admission have separate policy identities. Unrelated decisions, evidence
-additions, and evaluation timestamps do not change these identities. A shared
-rule change invalidates every dependent evaluation, even if the rule is stored
-elsewhere. Each evaluator defines and tests its complete dependency projection;
-callers cannot omit a rule to obtain a cache hit. The rollout report additionally
+Effective policy identity identifies the policy tested in reports and proposals;
+it is not a verification-result cache key. Hash the complete applicable provider/
+tier base policy, trust roots, required checks, exemptions, and active decisions.
+Evaluate from immutable validated policy objects on every new admission. Do not
+implement per-component policy projections or selective result invalidation.
+Unrelated provider rules, evidence additions, and evaluation timestamps do not
+change this identity. The rollout report additionally
 identifies the whole artifact digest and policy revision. A build update does not
 erase operator intent or make it an unconditional override. The current verifier checks whether the decision kind,
 scope, risk acknowledgement, and base-policy compatibility remain permitted. New
@@ -410,17 +451,17 @@ evaluated by the running implementation. Proposal application reruns current che
 and confirms the exact reviewed subject, failure, prerequisites, and applicable
 policy; a printed build identifier never replaces that evaluation.
 
-The policy projection is explicit by operation:
+The shared evaluators must apply these requirements on each new admission:
 
 | Operation | Included policy dependencies |
 | --- | --- |
 | Component provenance | Provider/tier/format applicability; complete matching `ImageProvenance` rules (provenance mode, source repositories, OIDC issuer/identity alternatives, key fingerprint, `NoDSSE`, provider-signer and workflow constraints); applicable organization-signer rule; log/root identities; checks/exemptions/decisions actually used. |
-| Compose/release coverage | Exact required membership and binding semantics plus each referenced component's evaluated policy identity; no first-component scalar can substitute for the set. |
+| Compose/release coverage | Exact required membership and binding semantics plus current evaluation of every required component; no first-component scalar can substitute for the set. |
 | Intel/AMD material | Build-owned trust anchors/chains, allowed retrieval authority, platform/CA/product/TCB matching rules, and actual certificate/CRL validity and revocation requirements. Fresh quote measurements are inputs, not policy. |
 | NVIDIA/CT/TUF material | Accepted authority and trust/bootstrap roots, refresh and key-rotation rules, signature/time/version requirements, and current withdrawal restrictions. Metadata contents/version/expiry are evidence dependencies, not arbitrary user policy. |
-| Endpoint admission | Provider/route and required TLS/E2EE binding rules, model and gateway measurement policies, factor applicability, merged default/configured `allow_fail`, all applicable exact decisions, and dependent software/material policy identities. |
+| Endpoint admission | Provider/route and required TLS/E2EE binding rules, model and gateway measurement policies, factor applicability, merged default/configured `allow_fail`, all applicable exact decisions, and current software/material checks. |
 
-Define descriptors beside the relevant evaluators and test mutation of every field.
+Define report/proposal policy descriptors beside the evaluators and test their completeness.
 Read `ImageProvenance`, `OrgSignerPolicy`, and measurement rules from the validated
 policy objects; never maintain a separate incomplete policy copy in cache code.
 Cryptographic equality checks retain constant-time comparison. Canonical decision
@@ -440,12 +481,26 @@ The artifact contains `policy_state` with a stable deployment-policy authority a
 monotonic revision. The first artifact writer creates an opaque authority with
 `crypto/rand` and preserves it thereafter. Empty policy starts at revision zero;
 read-only use of a missing implicit default creates no authority or file. Only explicit policy
-operations advance it. Proposals bind the authority, revision, and canonical digest
-of that state plus the complete active decision set. Under the file lock, apply
+operations advance it. For an existing artifact, proposals bind the authority,
+revision, and canonical digest of that state plus the complete active decision set. Under the file lock, apply
 requires an exact match; stale proposals require renewed review. Selected removals
 and eligible additions commit atomically. Reintroduction requires a newly reviewed
 addition against the current revision. Keep the authority and revision even after
 the last decision is removed; do not recreate revision-zero state.
+
+A first-use proposal for a missing default or explicitly selected cache destination
+records `artifact_precondition: absent`, with no invented authority or revision.
+Generation validates the destination but creates neither the artifact nor a policy
+authority. Apply validates the selected evidence and effective policy, then acquires
+the stable destination lock and confirms that the artifact is still absent. Only
+then does it generate the authority with `crypto/rand` and atomically commit the
+initial decisions and eligible evidence at revision one. Creation by any competing
+writer makes this proposal stale, even if the new artifact has empty policy;
+require renewed review rather than substituting its authority. Existing-artifact
+proposals never treat a missing artifact as empty policy. Trusted deployment must
+prevent deletion/rollback of established policy; absence is not a reset procedure.
+First-use interactive updates use the same transaction precondition. No selections
+or failed additions create no initial policy artifact through this workflow.
 
 Evidence writers have no decision-write capability. Under the lock they reread and
 preserve the current active decision set and policy state verbatim. Their snapshots
@@ -465,7 +520,7 @@ affected instances as required by the transport withdrawal contract.
 Cache support is a set of capabilities, not a provider-wide boolean. Select the
 format from strictly parsed evidence, not a model-name list or cached assumption.
 Include provider, evidence format, principal/tier, authenticated subject, and
-applicable policy in verification-result reuse scope. Content-addressed original
+applicable policy in each admission's evaluation scope. Content-addressed original
 bytes may be deduplicated without sharing policy conclusions. A format change
 requires fresh evaluation of its evidence coverage and enforcement policy.
 
@@ -502,8 +557,8 @@ For every new admission:
 
 1. Resolve the subject required by fresh attested compose or measurements.
 2. Select complete retained evidence and required dependency material.
-3. Run current verification and policy evaluation, sharing eligible in-process
-   subchecks only under their exact inputs, projected policies, and eligibility.
+3. Run current cryptographic verification and policy evaluation for every required
+   component and material check; do not reuse another admission's subcheck result.
 4. Fetch only missing or ineligible inputs; failed required retrieval blocks.
 5. Construct and publish authorization through the existing runtime owner.
 
@@ -597,8 +652,39 @@ This includes two explicit ownership changes: shared evidence orchestration and
 per-owner CT injection. None of these dependencies currently supplies a complete
 portable artifact snapshot/export operation. Existing getters and verifiers provide
 the integration points; wrappers still need immutable bytes, eligibility, scoped
-singleflight, and bounded retention. No reusable verification result may be formed
+singleflight, and bounded retention. No validated evidence snapshot may be formed
 by parsing a display report or trusting an asserted `pass` field.
+
+Material-owner reuse also requires a cancellation refactor. NVIDIA's current
+`getOrCreateKeyfunc` runs singleflight retrieval with the leader's context; canceling
+that context fails other waiters. CT's current `loadLogListWithRequest` holds
+`logListLock` across retrieval, so waiters cannot cancel their lock wait and a
+failure can trigger sequential per-waiter fetches. Snapshot/import wrappers alone
+do not satisfy the shared-work contract. Phases 6 and 7 must replace those behaviors:
+
+- Configure each owner and its clients before concurrent use. A shared retrieval
+  has a finite timeout and a context derived from the service/command lifecycle,
+  independent of the first admission's context. Keep a bounded active-operation
+  record and let callers wait for its immutable completion through a channel.
+- A caller with a context can cancel its own wait without canceling shared work.
+  All current waiters receive the same retrieval failure; do not retry separately
+  for each waiter. Later attempts follow the owner's bounded retry/rotation policy.
+  Preserve NVIDIA's refresh throttling and transport retry/capacity classification.
+- Keep network I/O outside state mutexes. Validate returned bytes before publication
+  and ensure a delayed completion cannot replace newer imported/refreshed material.
+  Use the owner's operation identity and synchronization; do not introduce an
+  endpoint authorization generation or a generic generation store for material.
+- TLS verification callbacks expose no request context. CT handshake waits must
+  therefore use the bounded owner operation/lifecycle and retain the bootstrap
+  client's hard timeout. Do not claim immediate per-request callback cancellation
+  or disable CT when a caller times out. Direct context-aware checks retain
+  independently cancellable waits.
+- Owner shutdown rejects new work, cancels outstanding retrieval, releases waiters,
+  and prevents later publication. Close owned idle clients, including CT bootstrap
+  and dependency clients; do not close caller-owned injected clients. Connect this
+  cleanup to `Server.Close` and command cleanup using existing transport factories
+  and socket budgets. No material refresh failure invalidates unrelated authorization
+  or authorizes inference replay.
 
 ### Chutes support after transport migration
 
@@ -654,8 +740,9 @@ check. Preserve the production chain through the quote-bound E2EE signing key,
 keyset membership, custody signatures, accepted KMS root, and event-log-authenticated
 application ID. Recheck the keyset's applicable `not_after` condition on admission.
 A stored custody result cannot supply a fresh quote/nonce or authenticate arbitrary
-keyset fields. Define exact signed inputs and policy scope before reusing a local
-custody subcheck; do not add a separately authoritative encryption-key cache.
+keyset fields. Define exact signed inputs and policy scope before retaining custody
+evidence, and verify it locally on every new admission; do not add a separately
+authoritative encryption-key cache.
 
 `source_provenance.repo_url` and `repo_commit` are provider assertions, not
 quote-bound release provenance. Retain them only as diagnostic observations.
@@ -704,7 +791,7 @@ admission and avoid a new pre-inference request; report that the diagnostic was 
 refreshed. Verify this distinction against current factor aggregation, not just the
 component's signer policy. Never turn skipped diagnostics into successful checks.
 If an enforced diagnostic factor still requires a query, retain that request and
-revise the budget until its complete reusable result has a defined contract.
+revise the budget until its complete reusable evidence has a defined contract.
 Apply the same behavior to cache preparation, serving, and verification, with their
 specified completion differences. Venice's budget is conditional on this work and
 its shared-runtime migration; the compose-only example promises no image signatures.
@@ -1046,7 +1133,8 @@ reconstruct trust from display reports or reimplement verification in the comman
 Write complete successful software targets only. Accepted TUF state is the explicit
 exception: persist authenticated trust transitions even after later target failure,
 as specified in [trusted version state](#tuf-trusted-version-state). For a multi-target run, preserve unrelated
-entries, retain valid dependencies shared with them, collect target failures, and
+entries except for the explicit capacity collection rules in Section 7, retain
+dependencies of every retained entry, collect target failures, and
 exit nonzero if any target failed. Failed targets contribute no software export or endpoint authorization. Decision scope can cover several models: an explicitly
 reviewed decision admitted through a successful target may affect a failed target's
 future policy, but must not claim that target passed. Show known affected models and
@@ -1149,11 +1237,13 @@ PhalaCloud and NanoGPT remain outside cache scope. Apply the same relevance rule
 ordinary `serve` routes; do not silently discard matching policy or add legacy adapters.
 Explicit `cache` targets remain rejected, with multi-target failure reporting.
 
-Remove `--update-config` and `--config-out` when delivering the operator decision workflow in Phase 10. Move
-operator measurement-policy input to explicit operator decisions in the same
-migration; only `--update-whitelist` may create TOFU pins from observations. Reject
-old config fields rather than silently ignoring them. Update CLI help, configuration
-examples, and provider documentation together.
+Remove `--update-config` and `--config-out` when delivering the operator decision
+workflow in Phase 10. Only `--update-whitelist` authors cache decisions from
+observations; it must not edit measurement-policy configuration. Retain the existing
+validated measurement allowlists and their replacement precedence as base policy,
+including restrictive lists. Reject removed CLI options and unknown configuration
+fields, but do not classify the retained measurement-policy fields as obsolete.
+Update CLI help, configuration examples, and provider documentation together.
 
 Operators can generate one trusted cache file and distribute it to replicas through
 their trusted deployment system. Replicas evaluate matching software evidence locally
@@ -1202,7 +1292,8 @@ eligible shared state for export without waiting for filesystem I/O. If capacity
 is exhausted, retain a bounded dirty-state indication for later snapshot work and
 emit a diagnostic; do not create an unbounded queue or delay authorized inference.
 Use the same locked read-merge-write transaction as `teep cache`, preserving
-unrelated targets and operator decisions on disk. Preserve the authoritative policy state and active decisions under the lock;
+operator decisions and retaining unrelated targets subject to Section 7's capacity
+collection rules. Preserve the authoritative policy state and active decisions under the lock;
 evidence snapshots have no policy-write capability. Do not hold runtime store mutexes during disk I/O.
 
 Reject `--autocache` with a read-only cache destination or an unusable destination at
@@ -1369,6 +1460,12 @@ risk acknowledgement fields for review; leave selections and acknowledgements un
 Retain or package the referenced original evidence so apply can validate it. A
 proposal is untrusted input, not an authorization or a loadable cache file.
 
+Include exactly one transaction precondition: existing policy authority/revision/
+state digest, or `artifact_precondition: absent` for first use as defined in
+Section 2e. Reject mixed or incomplete preconditions. A first-use proposal can be
+generated when base-policy failures prevent ordinary preparation; selected additions
+must still satisfy all effective-policy prerequisites at apply.
+
 Apply is an explicit noninteractive operation on the reviewed selections. Use strict,
 bounded parsing and the shared evaluator. Validate evidence integrity, scope, current
 applicable policy, supported decision kinds, and all admission prerequisites under
@@ -1448,11 +1545,11 @@ original bytes. Material dependencies use exact typed subject selectors; embedde
 roots and configured origins are selected by the current verifier, not installed
 by YAML declarations. A configured URL is never a new trust root.
 
-Runtime component evaluations use their own projected policy identities. Complete-set
-evaluation covers membership/binding plus each component's identity and policy.
-Changing B's signer rule or decision invalidates B and aggregate coverage, not an
-otherwise eligible A. This is in-process sharing; no policy hashes or result flags
-on software/material records can substitute for current evaluation after import.
+Complete-set evaluation covers membership/binding plus each component's identity
+and current policy on every new admission. Changing B's signer rule or decision
+does not require downloading A's unchanged eligible evidence, but both components
+are evaluated locally. No policy hashes or result flags on software/material
+records can substitute for current evaluation after import.
 
 Writers merge evidence and descriptive references by exact intrinsic subject and
 input identity. Revalidate conflicting associations rather than select a newer
@@ -1544,11 +1641,13 @@ a root update may require additional evidence. Neither TUF nor CT prefill may we
 bootstrap authentication to avoid a request.
 
 Local Sigstore metadata evaluation uses the pinned go-tuf `trustedmetadata` API:
-initialize from the build's bootstrap root, apply each consecutive `UpdateRoot`,
+create a fresh session for each evaluation or refresh, initialize from the build's
+bootstrap root, apply each consecutive `UpdateRoot`,
 then `UpdateTimestamp`, `UpdateSnapshot(..., false)`, and
 `UpdateDelegatedTargets` for targets and each required delegation. Verify target
 length/hashes before `root.NewTrustedRootFromJSON` and normal bundle verification.
-Use the current time, never the capture time, in production. Compare incoming
+Set the session's `RefTime` from the current admission clock, never the capture
+time. Do not reuse a session's construction-time clock across admissions. Compare incoming
 versions with the resolver-owned [trusted version state](#tuf-trusted-version-state);
 a fresh verifier instance alone does not provide historical rollback protection.
 
@@ -1593,6 +1692,47 @@ rotation must apply the library's timestamp/snapshot-key reset rules; do not tak
 numeric maximum across different key epochs. Same-version conflicting content is
 an error, not a choice of the newer writer.
 
+The resolver's retained rollback knowledge is separate from each mutable
+`trustedmetadata.TrustedMetadata` session. The pinned API rejects root updates
+after timestamp loading and timestamp updates after snapshot loading. An expired
+timestamp prevents snapshot loading; a newer timestamp can also reject an older
+snapshot's hashes. Therefore the usable-snapshot sequence above is not the restore
+algorithm for a partial checkpoint, and a long-lived session is not the authority
+store. Define and test the following restore/refresh boundary before the rest of
+the Phase 5 adapter:
+
+1. Authenticate the retained root chain from the current build's bootstrap.
+   Each retained role reference includes its authenticating root/key epoch and
+   the parent metadata needed to establish its accepted signature, hash, and
+   version relationships. Preserve these dependencies even when a later accepted
+   timestamp references a snapshot that was not downloaded. Delegated roles retain
+   their authenticated delegation context. Schema fields cannot assert acceptance.
+2. Restore historical rollback knowledge by verifying those original signatures
+   and relationships with the pinned library's verification primitives. Expired
+   metadata can establish only historical version knowledge; do not backdate the
+   clock, clear the checkpoint, or treat it as currently eligible evidence. Do not
+   pass `isTrusted=true` merely because bytes came from YAML. A missing dependency
+   or invalid signature fails restore; expiry alone does not prevent live refresh.
+3. Start a fresh session for the candidate current snapshot. Check its versions
+   and same-version content against the restored knowledge, using the library's
+   root-key rotation/reset rules. Perform normal signature, expiry, parent-hash,
+   version, and target checks. Historical role restoration cannot authorize a
+   current target. Reset only the roles permitted by authenticated key rotation.
+4. Capture each accepted transition even when an update method returns an error
+   after accepting intermediate metadata. Inspect the resulting authenticated
+   state and classify the error; a non-nil error is never admission success, and
+   an error before acceptance produces no transition. Publish transitions under
+   the authority lock, reconciling against changes by other sessions. Fetch outside
+   that lock. Recheck current authority state before completing the material
+   evaluation; reject or reevaluate an incompatible candidate. This does not
+   invalidate an already published endpoint authorization.
+
+Use separate helpers for checkpoint authentication, session construction, transition
+reconciliation, and current target eligibility. Keep the pinned library's checks;
+do not implement a second TUF signature verifier or silently drop historical roles
+to make a session load. File transactions use the same authenticated transition
+reconciliation without network I/O.
+
 Ordinary `cache`, explicit policy apply, and `serve --autocache` merge accepted
 state under the file transaction lock. `verify`, proposal generation, and ordinary
 `serve` are read-only artifact consumers. Revalidate
@@ -1616,6 +1756,12 @@ the plan does not promise cross-restart knowledge that was never committed.
 Test older-after-newer updates, concurrent writers, same-version conflicts, partial
 updates followed by target failure, authenticated root-key rotation/reset, evidence
 collection, restart after committed refresh, and restart of a read-only consumer.
+Include acceptance of a new timestamp followed by snapshot-download failure,
+persistence, restart after timestamp expiry, and successful authenticated refresh
+that still rejects rollback of previously accepted delegated-role versions. Test
+two successive refreshes in one process, expiry while the owner remains alive,
+errors before versus after a trust transition, and competing sessions advancing
+the authority while an older material evaluation completes.
 Use the pinned library's trusted metadata rules in both local and live paths.
 
 ### 6a. Near cloud: complete evidence example
@@ -1958,8 +2104,40 @@ active decisions and required dependencies. If safe collection cannot make room,
 fail the explicit cache write or report failed optional persistence; never write
 an oversized file that its own loader rejects. Bound envelope history and retain trust-state dependencies. Removal tombstones
 are unnecessary because evidence writers cannot modify policy.
-Deduplicate retrieval by exact material identity and authenticated origin, and
-in-process verification by inputs and projected policy. Each owning service uses
+
+Software subjects and independently retained material sets are collectible roots,
+not permanent references. Apply the same bounded capacity procedure to explicit
+writes and autocache under the file transaction lock:
+
+1. Protect the authoritative policy state, every active decision and its complete
+   supporting evidence, and all TUF rollback metadata and authentication dependencies.
+   Also protect the complete successful software targets and material sets selected
+   for this transaction. Protect their transitive dependencies, including required
+   containment references. No collector may remove a protected dependency.
+2. Remove unreferenced evidence. If the prospective artifact still exceeds any
+   storage bound, remove unprotected software/material roots and then their newly
+   unreferenced evidence until it fits. Prefer mutable material already ineligible
+   under its typed time rules; order other candidates by canonical subject identity
+   for deterministic selection. This ordering grants no trust or release freshness.
+   No persisted recency index or verification-result cache is required.
+3. Validate the remaining graph and encoded/decoded bounds before replacement.
+   If protected data alone exceeds capacity, fail the explicit transaction or report
+   failed optional persistence. Never drop a selected successful target silently.
+   Report removed subjects, reclaimed bytes, and protected bytes preventing recovery;
+   collected subjects can require normal retrieval on a later admission.
+
+Collecting a software subject removes only a retrieval optimization. It never
+changes policy, TUF rollback knowledge, or an acquired runtime authorization.
+A delayed evidence writer may reintroduce previously collected validated bytes
+under the same bounded merge rules; collection is not a security withdrawal and
+needs no tombstone. Such bytes still require current verification on new admission
+and cannot restore a removed decision. Avoid repeatedly enqueueing a snapshot solely
+because another writer collected it; a later successful admission can request export.
+Do not instruct operators to delete the artifact to recover capacity. Ordinary
+replacement writes can reclaim reconstructible evidence while retaining trust state.
+
+Deduplicate retrieval by exact material identity and authenticated origin. Validate
+before publishing reusable bytes; do not memoize admission subcheck results. Each owning service uses
 bounded shared contexts; one client's cancellation cannot cancel another's work.
 Do not add a generic generation store around each material adapter. Retain independent routing/discovery stores.
 
@@ -1967,8 +2145,9 @@ Use process-local synchronization for memory and a separate lock file for the
 cross-process read-merge-write transaction. Under the lock, reread, validate, merge
 without reviving invalidated records, write a restricted temporary file, sync,
 rename atomically, and sync the containing directory. Lock files must survive
-cache-file replacement. Disjoint provider updates preserve each other's objects;
-reference-aware collection must not delete evidence used by another verified subject.
+cache-file replacement. Disjoint provider updates preserve each other's objects
+unless capacity requires the documented collection procedure; collection must not
+delete evidence used by another retained subject.
 
 Use a fixed lock order: acquire the file transaction lock without a runtime mutex;
 load the authoritative artifact and policy revision; validate the immutable snapshot
@@ -2024,7 +2203,7 @@ generation/model that actually completed it. Portable export does not require a
 successful inference response; live E2EE usability retains its own completion checks. Do not move probe or
 retry policy into a second cache orchestration path.
 
-Material lookup/population and policy projection are specified in Sections 2e, 4,
+Material lookup/population and effective-policy reporting are specified in Sections 2e, 4,
 and 6. Preserve caller cancellation and server-owned bounded shared work; perform
 network/disk I/O outside runtime locks. Prefill supplies raw inputs to material owners; it does not publish a runtime
 authorization or borrow its generation. Only live admission reaches the existing
@@ -2158,6 +2337,10 @@ Test unchanged live outcomes, complete report/key/identity publication, required
 NRAS admission-time checks, cancellation isolation, eviction, replacement races,
 and unrelated HTTP/2 streams. Test prefill/publication ownership through the actual
 shared services using verified in-memory inputs; disk encoding belongs to Phase 2.
+Assert that malformed, unauthenticated, or failed material stays outside reusable
+stores, including after an admission permitted by `allow_fail`. Test two distinct
+admissions over identical evidence: retrieval is shared, but each runs local checks.
+Separately assert that acquired runtime authorization still avoids readmission.
 No new CLI is enabled in this phase.
 
 ### Phase 2: Portable artifact storage
@@ -2180,6 +2363,11 @@ Test malformed/unknown input, aliases/cycles, forged checks, duplicate or ambigu
 selectors, dangling dependencies, content mismatch, unsupported approval fields, untrusted
 imports, size bounds, reference collection, symlinks, path substitution, permissions,
 concurrent disjoint writers, cancellation, write failure, and crash boundaries.
+Test software-version churn through capacity, removal of collectible roots with
+shared dependencies, deterministic selection, and recovery without resetting policy
+authority or TUF state. Extend protected-decision/TUF cases when their phases enable
+those kinds. Test protected-data overflow, delayed writers reintroducing evidence,
+and size/peak-memory/write-cost measurements at the maximum supported artifact.
 Use supported production evidence representations for storage tests; new material
 kinds become usable only with their verified adapter. No command is enabled yet.
 
@@ -2187,7 +2375,7 @@ kinds become usable only with their verified adapter. No command is enabled yet.
 
 Implement compose and component export/prefill through the shared supply-chain
 verifier. Preserve original stapled envelope relationships and independent gateway
-and backend verification. Share exact evidence and equivalent subchecks across
+and backend verification. Share exact validated evidence across
 NearCloud/NearDirect without sharing endpoint authorization or consumer policy.
 Implement the required-versus-diagnostic retrieval classification in Section 4;
 never suppress an enforced factor because a saved record claims a check is not required.
@@ -2196,8 +2384,8 @@ Test complete membership, later-component signature failure, arbitrary replaceme
 list reordering, two versions of one repository, repository/digest aliasing, wrong
 model selection, incomplete backend evidence, envelope containment tampering, and
 same/different compose subjects sharing image bytes. Cover tier/provider isolation,
-changed gateway/backend keys, policy dependency projections, a B-only signer or
-decision change preserving component A's eligible runtime evaluation, same-key refresh,
+changed gateway/backend keys, changed signer policy requiring local reevaluation of
+all components without downloading unchanged eligible evidence, same-key refresh,
 concurrent imports, and prefill racing publication or eviction. Deny provenance
 network access for eligible reuse and local upgrade reevaluation; assert remaining
 required queries and accurately report unrefreshed optional diagnostics. These tests
@@ -2236,6 +2424,8 @@ limits, including explicit failure of unsupported release enumeration. Exercise 
 missing dependencies, scoped policy changes, and local build-update reevaluation.
 Implement and test the complete [trusted version-state contract](#tuf-trusted-version-state),
 including partial updates, concurrent persistence, collection, and read-only restarts.
+First demonstrate checkpoint restoration separately from fresh verification sessions,
+including expired/partial history and the pinned API's transition-on-error behavior.
 Deny eligible release/TUF retrievals and count cold discovery separately. Preserve
 router sharing and direct authority isolation. These tests complete the release
 portion of both Tinfoil scenarios; CT prefill follows in Phase 7.
@@ -2246,6 +2436,8 @@ Implement authenticated JWKS snapshot/import/export through the existing NVIDIA
 verifier. Preserve issuer/origin policy, original retrieval time, cache eligibility,
 key-rotation refresh, and bounded concurrent retrieval. This phase does not introduce
 a portable NRAS verdict or an independent NVIDIA reference-image verifier.
+Replace leader-context singleflight ownership with the bounded material-owner
+lifecycle and cancellable waits specified in Section 4; import/export alone is insufficient.
 
 Test trusted import, stale and malformed keysets, incorrect authority, unknown key
 IDs, eligible key rotation, refresh failure, concurrent consumers, and build/policy
@@ -2254,6 +2446,10 @@ still produces its required NRAS submission and signature/claim validation. Test
 the 10-second imported-clock allowance and monotonic remaining-lifetime cap. Prove
 that copying a file does not extend key eligibility and another report's NRAS result
 cannot satisfy a new nonce. Retain initial publication-time eligibility checks.
+Test two independent admissions sharing retrieval, leader cancellation/timeout,
+waiter cancellation, failure delivered to all current waiters without duplicate
+retrieval, refresh racing import, and shutdown during fetch. Verify prompt waiter
+release, no post-shutdown publication, and unchanged unrelated authorizations.
 
 ### Phase 7: CT metadata reuse
 
@@ -2262,12 +2458,19 @@ including clients owned by dependencies. Preserve bootstrap origin authenticatio
 original retrieval time, refresh rules, and live WebPKI, TLS identity, and SCT checks.
 Use the same material interfaces; do not use an inference-client-only cache or
 weaken bootstrap verification to avoid a request.
+Replace network I/O under `logListLock` with bounded shared retrieval and completion
+notification. Implement owner cleanup for the bootstrap client and distinguish
+context-aware waits from the bounded TLS-callback wait described in Section 4.
 
 Test all checker construction paths, eligible prefill, expiry, malformed/substituted
 lists, changed log policy, refresh failure, concurrent use, imported clock skew,
 clock rollback, and local upgrade reevaluation. Deny log-list retrieval on eligible inputs while checking live peer
 certificates through production TLS. Compose with the TUF adapter to expose hidden
 client traffic. Existing provider routing and connection scopes remain unchanged.
+Test blocked retrieval with concurrent handshakes/direct checks, independent caller
+cancellation where a context is available, a shared failure without serial retries
+by queued waiters, timeout, shutdown, and refresh/import races. Verify that active
+unrelated HTTP/2 streams continue and no failed refresh becomes a successful CT check.
 
 ### Phase 8: Command integration and complete portable budgets
 
@@ -2306,11 +2509,13 @@ supported classes and prerequisites in tests and maintained documentation. Eleva
 or otherwise unresolved classes remain explicitly rejected. Accept nonempty policy
 only through validated trusted imports at this stage; authoring follows in Phase 10.
 
-Include scoped effective-policy projection, cumulative decisions, compatibility with
+Include effective-policy reporting, cumulative decisions, compatibility with
 a new build, policy-revision validation, and references to the actual failed base checks.
 Make existing evidence writers preserve authoritative policy under their transaction
 lock and merge raw evidence without copying decisions or derived approvals. No class
 inherits a factor-wide override simply because several failures share a factor.
+Read the same configured model/gateway measurement base policy in all command
+consumers; decision evaluation must not replace restrictive configuration with defaults.
 
 Test every implemented class and retained prerequisite with production verification,
 including selected MRTD/MRSEAM tuples, unrelated measurement fields, subject/tier
@@ -2320,6 +2525,12 @@ applicable policy edits, withdrawn decisions, and new verifier restrictions. Pro
 matching effective-policy outcomes across cache/serve/verify, including existing
 `allow_fail` behavior, matching/unused decisions, and absence of relabeled successes.
 Count requests replaced by each class separately from its creation prerequisites.
+Test built-in acceptance of A and B with configured acceptance of A only: B remains
+rejected in cache, serve, and verify when no applicable decision or explicit factor
+allowance permits it. Cover global/per-provider replacement precedence, gateway
+registers, an explicitly reviewed B exception with the base failure still reported,
+and withdrawal of that exception restoring rejection. A cached evidence file cannot
+erase the configured restriction.
 Update security and review instructions in this commit, when exceptions become usable.
 
 ### Phase 10: Whitelist editing and policy transactions
@@ -2329,8 +2540,11 @@ proposal application on top of Phase 9's evaluator and Phase 2's transaction lay
 Implement concrete selections, explanations, frozen target discovery, ordinary bulk
 selection, exact proposal validation, and the acknowledgement representation required
 by future elevated classes. Do not enable those classes through the UI prematurely.
-Replace `--update-config`, `--config-out`, and the corresponding old measurement-policy
-input in this commit; reject obsolete fields and update help/configuration together.
+Replace `--update-config` and `--config-out` in this commit; reject those obsolete
+options and update help/configuration together. Retain measurement-policy input
+as base policy with its existing restrictive and precedence semantics. Add examples
+that distinguish configured restrictions from reviewed exceptions; no command
+automatically converts configured restrictions into additive decisions.
 
 Implement policy authority/revision/state comparisons under the lock, explicit removal,
 newly reviewed reintroduction, and atomic eligible additions plus withdrawals. Bind
@@ -2338,6 +2552,15 @@ proposals to exact reviewed subjects/evidence/failures/applicable policy and cur
 policy state. Build information is diagnostic; apply reruns the current implementation. Reevaluate successful targets against the committed subset. Report known shared
 scope when a successful target's decision also affects a failed target; do not export
 software evidence justified solely by that failed target.
+
+Implement first-use absence preconditions for proposals and interactive edits.
+Test generation/application against missing default and explicit destinations,
+base-policy failure resolved by the first decision, two competing first writers,
+ordinary artifact creation between review and apply, disappearance of an existing
+artifact, cancellation, and empty selection. Only a successful first policy commit
+creates its authority; an existing artifact requires renewed review.
+Test a relevant configured measurement-policy change between proposal generation
+and apply; require renewed review without discarding or broadening the restriction.
 
 Test interactive cancellation/confirmation, nonempty reasons, all-model and selected
 model flows, empty/unbounded selections, unsupported failures, strict/tampered proposals,
@@ -2364,6 +2587,8 @@ and release evidence, complete component coverage, permitted failed checks, and 
 E2EE usability. Assert the same portable budgets as explicit preparation. Cover concurrent
 cache-command/service writers, queue saturation, read-only conflicts, slow/failed writes,
 recovery, shutdown flush, and stale snapshots racing policy withdrawal/reintroduction.
+Exercise sustained deployment changes through capacity, bounded collection without
+requeue loops, and subsequent restart using the newly persisted software evidence.
 Prove optional write failure leaves independently completed in-memory authorization
 usable, does not claim persistence, and cannot revive removed decisions or replace another consumer's evidence incorrectly. Restart always requires fresh endpoint admission.
 
@@ -2412,7 +2637,7 @@ The paths below are planned files; add working links when the files are created.
 | --- | --- |
 | `docs/cache/README.md` | Entry point: purpose, terminology, architecture, portable prefill and runtime admission, command/configuration reference, deployment modes, and links to detailed contracts and implementation entry points. |
 | `docs/cache/storage.md` | Evidence-only typed schema, descriptive component membership, input/header references, retrieval eligibility and clock skew, TUF state, operator decisions, validated import/export, atomic transactions, bounds, and current verification after every restart. Retain one complete NearCloud YAML example and a compact provider-difference table. |
-| `docs/cache/operator-decisions.md` | `--update-whitelist` interactive selection, proposal generation and explicit apply, exact subject scope, supported/unsupported and elevated-risk classes, acknowledgements, retained checks, diagnostics, decision deployment/removal, and interactions with existing policy controls. |
+| `docs/cache/operator-decisions.md` | `--update-whitelist` interactive selection, proposal generation and explicit apply, exact subject scope, supported/unsupported and elevated-risk classes, acknowledgements, retained checks, diagnostics, decision deployment/removal, and interactions with retained restrictive measurement configuration and other policy controls. |
 | `docs/cache/testing.md` | Request-count methodology and scenario budgets, live/prefill equivalence, concurrency and persistence-failure coverage, commands to reproduce checks, and links to actual regression tests. |
 
 ### 9a. Ownership and cross-references
@@ -2491,7 +2716,7 @@ must identify migration blockers rather than suggesting incomplete cache support
 | 7 | Document CT prefill across all client owners, bootstrap/refresh rules, retained live TLS checks, and counting coverage. |
 | 8 | Publish implemented cache/serve/verify commands, common default path, target and failure behavior, `--no-cache`, read-only deployment, complete core YAML examples, and measured request methodology. Update setup/help/configuration and provider links. |
 | 9 | Create/update `operator-decisions.md` for supported exact classes, prerequisites, effective policy, decision consumption, retained failures, and upgrade/withdrawal semantics. Update AGENTS.md and affected review instructions when exceptions become usable. |
-| 10 | Publish interactive/proposal/withdrawal workflows, reasons, revision conflicts, partial/shared scope, deployment instructions, and replacement of old policy-edit inputs. Keep help and configuration examples consistent. |
+| 10 | Publish interactive/proposal/withdrawal workflows, reasons, revision conflicts, partial/shared scope, deployment instructions, and replacement of automatic config-editing options while retaining restrictive measurement-policy input. Keep help and configuration examples consistent. |
 | 11 | Document autocache opt-in, admission/export boundary, bounded asynchronous writes, errors, policy-preserving transactions, and restart budgets. |
 | Conditional extensions | Update provider capability matrices and per-class decision references with their implementing commits. Add newly supported examples, budgets, regression links, and security/review rules without changing the core contracts implicitly. |
 
