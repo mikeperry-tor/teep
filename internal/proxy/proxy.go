@@ -2432,19 +2432,24 @@ func (ri *responseInterceptor) Write(b []byte) (int, error) {
 // Returned by newResponseInterceptor when the underlying writer is flushable.
 type responseInterceptorFlusher struct {
 	*responseInterceptor
-	flusher http.Flusher
 }
 
 func (rif *responseInterceptorFlusher) Flush() {
-	rif.flusher.Flush()
+	_ = rif.FlushError()
+}
+
+// FlushError preserves downstream failures for ResponseController callers.
+func (rif *responseInterceptorFlusher) FlushError() error {
+	rif.headerSent = true
+	return http.NewResponseController(rif.ResponseWriter).Flush()
 }
 
 // newResponseInterceptor wraps w in a responseInterceptor. The returned writer
 // satisfies http.Flusher only if w does.
 func newResponseInterceptor(w http.ResponseWriter) (*responseInterceptor, http.ResponseWriter) {
 	ri := &responseInterceptor{ResponseWriter: w}
-	if f, ok := w.(http.Flusher); ok {
-		return ri, &responseInterceptorFlusher{responseInterceptor: ri, flusher: f}
+	if _, ok := w.(http.Flusher); ok {
+		return ri, &responseInterceptorFlusher{responseInterceptor: ri}
 	}
 	return ri, ri
 }
