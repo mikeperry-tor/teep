@@ -997,8 +997,9 @@ source and dependency required each request, separately from verification costs.
 
 A previously prepared matching release remains usable without asking whether it is
 latest. However, cold preparation cannot guarantee discovery of every older deployed
-release through the currently permitted proxy. This limitation is recorded in
-[the planning issues](supply_chain_caching_issues.md#older-tinfoil-release-discovery).
+release through the currently permitted proxy. A fixed cloud router has no
+guaranteed discovery hint for an unknown older tag; bounded candidate search does
+not remove that limitation.
 No new tag flag, direct-GitHub bypass, or alternate whitelist input is introduced.
 A broader discovery contract or a reviewed reference-hint interface is separate work.
 Fixture coverage must include supported known-tag retrieval, unsupported enumeration,
@@ -1022,6 +1023,13 @@ server counters. Record attempts that fail or are cancelled before transmission
 separately from transmitted requests. Define the start event and terminal outcome
 for each counter in the test helper so partial writes are not counted as completed
 requests. Do not disable production retries to make the counters agree.
+
+Implement accounting with transport decorators, existing request trace events, and
+test-server observations. Keep protocol observations in test helpers where possible.
+Do not replace or fork production transports, alter retry decisions, or introduce a
+new scheduler solely to obtain counts. Extend existing transport regression tests
+when they already exercise the required attempt boundary. If an observation cannot
+distinguish attempts, report its coverage limit until a tested observation exists.
 
 Count redirects and library retries at their actual attempt boundaries. Report
 proxy CONNECT requests separately from origin HTTP requests and TLS handshakes;
@@ -1420,6 +1428,15 @@ Capture observation hooks retain inputs only and cannot promote them into truste
 runtime material. Preserve original retrieval times, input associations, and the
 loaded-artifact digest separately from additional inputs collected during the run.
 
+Keep shared material clients and their transports immutable after construction.
+The existing per-invocation capture code replaces an attempt client's transport;
+that client cannot become a shared material client. Retain attempt-owned recording
+for live evidence and attach synchronized input observations to material acquisition
+and consumption. Each consumer records the exact inputs it used, including inputs
+acquired by another target. Completion or cancellation of one target detaches only
+its observer; it cannot close a shared client or cancel another target's retrieval.
+The service/command owner closes its material clients at lifecycle completion.
+
 Retain the relevant non-secret base-policy inputs and exact operator-decision
 context needed to reproduce the report, including unused-decision diagnostics.
 Never copy a configuration file containing credentials. Validate capture additions
@@ -1442,6 +1459,11 @@ the original artifact and changes to ambient cache selection. Cover inputs reuse
 from memory across targets, dependency tampering, missing inputs, applied and unused
 decisions, and unchanged outbound request counts. No capture-only requests may be
 added to recover evidence already consumed locally.
+Run two targets sharing one material acquisition with independent captures. Cancel
+or complete one while the other waits; assert continued retrieval, race-free capture
+snapshots, and complete inputs for the surviving target. Repeat when one target
+reuses already retained material. Replay each successful capture independently,
+with the original clients and portable artifact unavailable.
 
 ### Mixed-provider verification and deployment
 
@@ -1615,16 +1637,28 @@ independently verified key possession and its required trust prerequisites even 
 the expected identity comparison fails. In the Tinfoil path, separate that comparison
 from bundle authentication instead of treating `FetchAndVerify`'s combined error as
 an authenticated observation. In the NEAR path, parsing certificate OIDC extensions
-alone does not independently validate the issuer chain. Ordinary raw-key fingerprint
-TOFU may use verified possession/provenance; an OIDC-identity exception requiring an
-independent chain is unavailable until that prerequisite is implemented. Do not claim
-additional assurance for existing `NoDSSE` or compose-only components.
+alone does not independently validate the issuer chain. The current raw-key Rekor
+path verifies log evidence, not possession of the artifact-signing key. A raw-key
+fingerprint decision therefore remains unavailable until separate production
+verification work establishes possession and the required artifact binding. Do not
+claim additional assurance for existing `NoDSSE` or compose-only components.
+
+The initial decision implementation has the following capability boundary. The
+broader inventory above does not enable additional classes:
+
+| Decision | Initial scope and prerequisite |
+| --- | --- |
+| Unlisted TDX measurements | Exact selected MRTD, MRSEAM, and indexed RTMR fields under the model/gateway register-list policy for supported providers. Preserve all other quote checks. Signed code/hardware-reference mismatches remain elevated. |
+| Repository recognition | Exact repository and tier only where a fully specified existing signer/provenance rule independently applies. Reject creation of a missing provenance rule. |
+| Tinfoil OIDC signer recognition | Exact repository/tier, issuer, and workflow identity after Phase 9 separates bundle authentication from expected-identity comparison. Required certificate-chain, signature, transparency, artifact, and measurement bindings must independently pass. |
+| NEAR OIDC signer recognition or raw-key fingerprint TOFU | Deferred pending separate production verification of the missing chain or key-possession prerequisite. Neither parsing OIDC fields nor verifying a Rekor entry supplies it. |
+| New image/compose version already accepted by policy | Ordinary caching; no decision is created. No new expected-digest policy is introduced. |
+| Other measurement mechanisms and elevated inventory classes | Deferred until their exact evaluator and prerequisites are implemented separately. Chutes and Venice also require their stated transport migrations. |
 
 Before authoring candidates, classify each as implemented ordinary, existing-policy
 accepted, elevated/deferred, or unsupported. Preserve all base failures, prerequisite
 outcomes, applicable exemptions, and exact selected fields. These capability limits
-are recorded in [the planning issues](supply_chain_caching_issues.md#ordinary-decision-coverage)
-and apply equally to interactive and proposal workflows. They introduce no class flag
+apply equally to interactive and proposal workflows. They introduce no class flag
 or separate policy input. Phase 9 tests each supported typed reason and rejects the rest.
 
 ### 5b. Operator decision command and reporting
@@ -1985,8 +2019,10 @@ Neither `ForceCache` nor `UnsafeLocalMode` is the cache adapter. On expired, mis
 incompatible, or revoked-by-current-policy material, run bounded authenticated live
 refresh through an injected fetcher and retain the complete returned graph. Keep
 that fetcher isolated from ambient `$HOME/.sigstore` state and from other deployments.
-The bounded-snapshot update semantics and withdrawal responsibility are recorded in
-[the planning issues](supply_chain_caching_issues.md#sigstore-trust-metadata-reuse).
+Local verification provides the snapshot's bounded validity, not immediate awareness
+of every upstream trust change. An online newest-metadata check would add requests
+to the zero-TUF budget. Withdrawal and restart responsibilities follow the
+[trusted version-state contract](#tuf-trusted-version-state).
 
 The NearCloud example uses two quote-derived TCB-information objects and shared
 QE/CRL inputs. NearDirect can use the backend evidence under its own policy. Neither
@@ -2662,6 +2698,12 @@ disk persistence and remain part of this refactor. Share transport factories and
 bounded retrieval coordination, but do not combine authorization generations,
 material freshness, TUF rollback state, and file transactions into a universal cache
 lifecycle. Their owners retain their distinct validation and synchronization rules.
+Extend existing client factories through dependency injection and reuse the
+[transport regression coverage](../transport/testing.md) for socket capacity,
+retry classification, and pool cleanup. Material adapters do not introduce another
+transport or retry framework. Add integration tests where an adapter changes client
+ownership; unchanged transport behavior keeps its existing tests and authoritative
+contract in `docs/transport/`.
 `verify` always calls fresh collection/evaluation and then its required probe, without
 acquiring proxy runtime authorization. `cache` uses the same collection/evaluation
 and exports after non-deferred checks. Serving promotes E2EE usability only for the
@@ -2680,7 +2722,8 @@ planning prototypes do not replace them.
 
 
 
-Implement Phases 0 through 11 in order, including 3a after 3 and 5a–5c in place of 5.
+Implement Phases 0 through 11 in order, including 2a after 2, 3a after 3,
+and 5a–5c in place of 5.
 Each phase builds on the completed preceding
 phases; it is not independently applicable to an earlier checkout. Each phase must
 produce one reviewable commit with a complete implementation, tests, and maintained
@@ -2715,6 +2758,7 @@ that needs them, with all existing callers and tests updated in that commit.
 | Milestone | First phase delivering the behavior |
 | --- | --- |
 | Shared live admission and candidate construction | 1 |
+| Strict live compose parsing and complete component coverage | 2a |
 | Portable storage and concrete prefill/export | Storage in 2; interfaces with their first adapters in 3–7 |
 | Goal 1, first supported delivery: NEAR software preparation/reuse through all three commands | 3a |
 | Goal 1, complete initial provider/dependency scope and portable budgets | 8 |
@@ -2791,6 +2835,11 @@ coverage limits. Count proxy CONNECT separately. Complete Section 4b coverage is
 required by Phase 8 before claiming comprehensive outbound or full scenario totals.
 No earlier result may label outer-wrapper counts as all transport attempts or use
 uncovered paths as proof of zero requests. Production retries remain enabled.
+Keep this phase limited to the counters, denial controls, and executable baseline
+cases needed by subsequent phases. Reuse existing transport tests for retry and
+proxy observations; add the remaining assertions with the adapters that need them.
+Do not delay Phase 3a's software-only delivery for the comprehensive totals due in
+Phase 8, or change production scheduling or retries to simplify measurement.
 
 Test successful service sequences and early failures separately; a shorter failure
 sequence is not a successful-admission budget. Provide deterministic counters and
@@ -2869,6 +2918,39 @@ Include deeply nested input, aliases, duplicate fields, cycles, and near-limit
 payloads; reject structural/resource violations before unbounded parser allocation
 or traversal. Exercise bounds on parser structures as well as decoded evidence.
 
+### Phase 2a: Strict live compose parsing and component coverage
+
+Replace regex membership extraction with the bounded production component parser
+specified in Section 2b-i. Update existing live callers together, using Phase 1's
+shared admission service where applicable. Remove silent 64-digest truncation and
+the malformed-JSON text fallback. Preserve exact bound compose bytes, full
+repository/digest relations, tag-only binding limitations, and literal-default
+classification. Return unknown fields to the owning caller.
+
+Feed complete typed component coverage into the live supply-chain and report
+evaluators. Implement Section 4's required-versus-diagnostic retrieval classification
+here so compose-only components need no fabricated successful Rekor response.
+Keep every required signed component and the independent gateway/model boundaries.
+Preserve Venice's existing missing-backend failures without enabling its cache path.
+This phase changes live parsing and coverage; it introduces no portable adapter,
+material store, operator decision, or new CLI.
+
+Test mixed pinned/tag-only services, malformed manifests, duplicate service names,
+image strings in comments/environment values, unresolved variable references, and
+65 distinct images. Assert complete membership or an explicit bound/format failure.
+Cover list reordering, two versions of one repository, repository/digest aliasing,
+and failure of a later required component. Compare factor enforcement through live
+callers, including compose-only coverage and absent backend evidence. Assert required
+and diagnostic request counts independently of any cache saving.
+Fuzz component parsing and prove that local environment changes cannot change the
+membership or binding classification of identical authenticated compose bytes.
+Use the named NEAR capture to test authentication of the literal default in
+`COMPOSE_MANAGER_IMAGE` while retaining the runtime-override gap. Assert that
+default-image provenance success does not claim authentication of override contents,
+and that no script execution or local environment lookup occurs. Deliver this
+production parser and its coverage tests in a separate reviewable commit before
+introducing portable software reuse.
+
 ### Phase 3: NEAR software reuse
 
 Implement compose and component export/prefill through the shared supply-chain
@@ -2877,12 +2959,9 @@ interfaces needed by this first adapter. Later adapters extend these boundaries
 only where their typed requirements need it. Preserve original stapled envelope
 relationships and independent gateway and backend verification. Share exact validated
 evidence across NearCloud/NearDirect without sharing endpoint authorization or
-consumer policy.
-Implement the required-versus-diagnostic retrieval classification in Section 4;
-never suppress an enforced factor because a saved record claims a check is not required.
-Replace regex membership extraction with the strict component parser specified in
-Section 2b-i, updating live and retained-input callers together. Do not retain the
-current silent 64-digest truncation or a malformed-JSON text fallback.
+consumer policy. Use Phase 2a's parser and typed component evaluations for retained
+inputs as well as live inputs; add no portable-only parser or coverage evaluator.
+Never suppress an enforced factor because a saved record claims it is not required.
 
 Test prefill/publication ownership through the shared services. Malformed,
 unauthenticated, and failed material must stay outside reusable stores, including
@@ -2902,15 +2981,8 @@ concurrent imports, and prefill racing publication or eviction. Deny provenance
 network access for eligible reuse and local upgrade reevaluation; assert remaining
 required queries and accurately report unrefreshed optional diagnostics. These tests
 complete the software portion of the NearCloud/NearDirect scenarios, not collateral budgets.
-Test mixed pinned/tag-only services, malformed manifests, duplicate service names,
-image strings in comments/environment values, unresolved variable references, and
-65 distinct images. Assert complete membership or an explicit bound/format failure.
-Fuzz component parsing and prove that local environment changes cannot change the
-membership or binding classification of identical authenticated compose bytes.
-Use the named NEAR capture to test authentication of the literal default in
-`COMPOSE_MANAGER_IMAGE` while retaining the runtime-override gap. Assert that
-default-image provenance success does not claim authentication of override contents,
-and that no script execution or local environment lookup occurs.
+Round-trip Phase 2a's supported component fixtures through portable export/import
+and assert identical membership, binding classification, and policy outcomes.
 
 ### Phase 3a: Supported NEAR software preparation and reuse
 
@@ -3113,9 +3185,13 @@ Implement exact operator-decision interpretation in the shared policy evaluator 
 all three command consumers. Expose typed failure reasons in the owning verifiers:
 unlisted measurements, repository/signer/content policy violations, missing evidence,
 invalid signatures, expiry, and authenticated revocation must remain distinguishable.
-Implement the fully specified ordinary classes from Section 5a; enumerate the exact
-supported classes and prerequisites in tests and maintained documentation. Elevated
-or otherwise unresolved classes remain explicitly rejected. Accept nonempty policy
+Implement the initial capability table in Section 5a. Separate Tinfoil bundle
+authentication from expected signer comparison in the production verifier before
+enabling its exact OIDC signer decisions; test valid authentication with an unlisted
+identity and failures of every retained cryptographic prerequisite. Keep NEAR OIDC
+and raw-key decisions deferred as specified there. Enumerate supported provider,
+tier, reason, and prerequisite combinations in tests and maintained documentation.
+Elevated or otherwise unresolved classes remain explicitly rejected. Accept nonempty policy
 only through validated trusted imports at this stage; authoring follows in Phase 10.
 
 Include effective-policy reporting, cumulative decisions, compatibility with
@@ -3347,7 +3423,8 @@ must identify migration blockers rather than suggesting incomplete cache support
 | 0 | Establish `docs/cache/README.md` and `testing.md`, reproducible counting methodology, fixture links, and AGENTS.md discovery links. |
 | 1 | Document shared live collection/evaluation and candidate construction; cross-reference transport ownership, lifetime, publication, and invalidation. Defer portable interfaces to concrete adapters. |
 | 2 | Create/update `storage.md` for strict evidence schema, identities, dependency resolution, rejected approval fields, trusted imports, bounds, and secure transactions. |
-| 3 | Document concrete prefill/export interfaces, NEAR software sharing, independent consumer evaluations, envelope handling, component completeness, literal-default authentication and its override limitation, and diagnostic retrieval behavior. |
+| 2a | Document supported live compose syntax, complete component coverage, literal-default authentication and its override limitation, and required-versus-diagnostic retrieval. Update affected provider references and regression links. |
+| 3 | Document concrete prefill/export interfaces, NEAR software sharing, independent consumer evaluations, envelope handling, and parity with Phase 2a's live component coverage and binding classifications. |
 | 3a | Publish supported NEAR software-only cache/serve/verify use, common path resolution, `--no-cache`, capture/replay inputs and isolation, mixed-provider behavior, partial failures, and exact software request savings. State remaining live dependency work and unavailable capabilities. |
 | 4 | Document Intel/AMD material applicability, header-delivered dependencies, freshness/revocation rules, sharing, and regression tests. |
 | 5a | Document authenticated historical TUF checkpoints, partial transitions, key epochs, reconciliation, protected dependencies, and restart limits. |
@@ -3380,10 +3457,13 @@ running implementation/validation log.
 
 ## 10. Discussion sources and remaining policy work
 
-Material research limitations and operator consequences are recorded in
-[the planning issues](supply_chain_caching_issues.md). These include unsupported older-release
-enumeration, bounded TUF snapshot reuse, ordinary-decision prerequisites, and
-fresh-admission costs after restart. They do not introduce additional CLI flags.
+The applicable limitations and operator consequences are specified in
+[release discovery](#resolving-authenticated-tinfoil-releases-on-a-miss),
+[trust metadata reuse](#ct-and-sigstore-dependency-coverage),
+[ordinary decision boundaries](#ordinary-decision-implementation-boundaries), and
+[restart boundaries](#3c-restart-and-invalidation-boundaries). These sections define
+the implementation requirements without a separate research-issues document or
+additional CLI flags.
 
 The following discussions provide source context; the requirements are specified
 in this document:
