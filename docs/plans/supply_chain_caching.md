@@ -1826,11 +1826,14 @@ configured authority and material kind, separately from historical evidence byte
 The `verification_material` list contains at most one JWKS or CT record for each
 such selector. Superseded inputs needed by a decision remain in `evidence` and its
 historical references, not as additional selectable `verification_material` records.
-Select that observation before evaluating a token or certificate; never search older
+Select that observation when evaluating material for a token or an uncached
+certificate check; never search older
 JWKS or CT lists for one that makes verification succeed. A successfully validated
 refresh supersedes the owner's previous observation, including removal of keys or
 logs. Concurrent refresh/import publication uses the owner's operation identity.
-Delayed work cannot restore a superseded observation.
+Delayed work cannot restore a superseded observation. CT certificate-check results
+retain their separate one-hour lifetime as specified below; replacing log-list
+material does not retroactively invalidate those results.
 
 File merge selects the latest eligible authenticated retrieval observation by its
 original retrieval time, not by content digest or signature success. Apply the clock
@@ -1925,8 +1928,38 @@ replica clock differences, and backward/forward adjustments with an injected clo
 
 CT material must prefill every relevant CT checker, including dependency-owned
 clients; loading it into only the inference client cannot establish zero CT HTTP
-requests. Continue live WebPKI, TLS identity, and SCT validation. Sigstore material
-must cover the root transition chain from the current build's bootstrap root,
+requests. Continue live WebPKI, TLS identity, and SCT validation.
+
+The TLS CT guarantee in this plan is local SCT signature validation using known
+log public keys. The downloaded log list describes log identities and keys, not
+the certificates contained in their append-only trees. This pathway does not
+retrieve or verify certificate Merkle inclusion proofs and must not report
+independently verified inclusion or equivalence to Chrome's complete CT policy.
+Stronger CT verification, including log trust policy, authenticated tree heads,
+inclusion and consistency proofs, and merge-delay/admission semantics, is separate
+work. It is not a prerequisite for this cache implementation and adds no requests
+to this plan's budgets. This distinction concerns TLS CT, not existing required
+Rekor or Sigstore transparency checks.
+
+Preserve the existing two cache lifetimes: successful host/certificate SCT checks
+remain reusable for one hour, and log-list material has a 24-hour lifetime, subject
+to the authenticated-retrieval time rules above. Certificate-check results remain
+process-local and are not exported. A valid result can satisfy a subsequent
+connection's CT check even after log-list refresh or import; replacement does not
+retroactively invalidate that result. A check already using the previous list may
+finish and publish its normally bounded certificate-check result without restoring
+that list as current material. An uncached check selects the current eligible list.
+Cache hits do not renew either lifetime.
+
+Expiry alone schedules no work. After certificate-result expiry, a subsequent
+connection repeats local SCT verification; it retrieves log-list material only
+when that material is missing or ineligible. Expiry and metadata replacement do
+not recheck, terminate, or renew established HTTP/2 connections or endpoint
+authorizations. Every new connection still performs its required WebPKI and
+attested-identity checks. Do not add certificate-result invalidation machinery to
+make metadata replacement immediate in this plan.
+
+Sigstore material must cover the root transition chain from the current build's bootstrap root,
 timestamp/snapshot/targets and any delegated metadata needed for the selected trust
 target. Retain every required transition and delegated metadata object as a typed input.
 Run existing TUF signature, expiry, version, target-hash, and rollback checks locally;
@@ -3030,6 +3063,14 @@ unrelated HTTP/2 streams continue and no failed refresh becomes a successful CT 
 Test superseded log lists with the same selection/merge cases as JWKS. Preserve
 existing certificate-check cache eligibility; historical list bytes cannot become
 current merely because a certificate fails evaluation against the selected list.
+Test the separate one-hour result and 24-hour material lifetimes, without renewal
+on cache hits. Cover a cached result surviving list replacement, a check completing
+against a previously acquired list, and an uncached check using the new list.
+Advance the clock without new connections and assert zero background requests and
+uninterrupted live HTTP/2 streams. Then establish new connections to prove local
+reverification after result expiry and retrieval only for missing/ineligible list
+material. Assert that portable output contains no certificate-check successes and
+that reports describe SCT signature validation without claiming inclusion proofs.
 
 ### Phase 8: Complete command capabilities and portable budgets
 
@@ -3313,7 +3354,7 @@ must identify migration blockers rather than suggesting incomplete cache support
 | 5b | Document current TUF eligibility, bounded refresh, request counts, concurrent transitions, and isolation from ambient caches. |
 | 5c | Document Tinfoil release sets, matching-release discovery, TUF integration, direct/cloud scope, and the direct live-validation limitation. |
 | 6 | Document NVIDIA JWKS trust and refresh rules, original retrieval-time handling, and retained report-bound NRAS work. |
-| 7 | Document CT prefill across all client owners, bootstrap/refresh rules, retained live TLS checks, and counting coverage. |
+| 7 | Document CT prefill across all client owners, bootstrap/refresh rules, independent result/material lifetimes, SCT-only TLS assurance, retained live TLS checks, and counting coverage. |
 | 8 | Extend command/provider documentation to complete initial scope and dependency prefill, including Tinfoil, complete core YAML examples, and measured request budgets. Update setup/help/configuration and provider links. |
 | 9 | Create/update `operator-decisions.md` for supported exact classes, prerequisites, effective policy, decision consumption, retained failures, and upgrade/withdrawal semantics. Update AGENTS.md and affected review instructions when exceptions become usable. |
 | 10 | Publish interactive/proposal/withdrawal workflows, reasons, revision conflicts, partial/shared scope, deployment instructions, and replacement of automatic config-editing options while retaining restrictive measurement-policy input. Keep help and configuration examples consistent. |
