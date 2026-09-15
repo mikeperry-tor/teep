@@ -75,6 +75,7 @@ func TestAuthorizationCounts(t *testing.T) {
 func TestAuthorizationSameKeySingleflight(t *testing.T) {
 	store := newAuthorizationStore(maxAuthorizations, maxAuthorizationVerifications, authorizationVerificationTimeout)
 	defer store.close()
+	logs := captureAuthorizationDiagnostics(t, store)
 	key, candidate := testAuthorizationCandidate(t, "model")
 	var calls atomic.Int32
 	var wg sync.WaitGroup
@@ -106,6 +107,9 @@ func TestAuthorizationSameKeySingleflight(t *testing.T) {
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("verification calls = %d", calls.Load())
+	}
+	if strings.Count(logs.String(), "authorization verification started") != 1 || !strings.Contains(logs.String(), "authorization verification result received") {
+		t.Fatalf("incorrect shared verification diagnostics: %s", logs.String())
 	}
 	value, ok := store.acquire(key)
 	if !ok || value.report.Metadata["model"] != "model" {
