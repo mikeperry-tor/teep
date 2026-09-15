@@ -2409,7 +2409,8 @@ func relayResponse(ctx context.Context, w http.ResponseWriter, body io.Reader,
 // writer's capability.
 type responseInterceptor struct {
 	http.ResponseWriter
-	headerSent bool
+	headerSent   bool
+	bytesWritten int64
 }
 
 // Unwrap lets ResponseController reach the server's deadline support.
@@ -2422,7 +2423,9 @@ func (ri *responseInterceptor) WriteHeader(code int) {
 
 func (ri *responseInterceptor) Write(b []byte) (int, error) {
 	ri.headerSent = true
-	return ri.ResponseWriter.Write(b)
+	n, err := ri.ResponseWriter.Write(b)
+	ri.bytesWritten += int64(n)
+	return n, err
 }
 
 // responseInterceptorFlusher extends responseInterceptor with Flush support.

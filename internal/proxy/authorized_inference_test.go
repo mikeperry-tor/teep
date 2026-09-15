@@ -197,7 +197,7 @@ func TestAuthorizedRejectionPreservesReplacement(t *testing.T) {
 		replacement.report.Metadata = map[string]string{"generation": "replacement"}
 		old = loadTestAuthorization(t, server.authorizations, key, candidate)
 		prov := &provider.Provider{Name: key.ProviderName(), BaseURL: upstream.URL, StaticRoute: route, UsesTLSBinding: true, E2EE: true, Encryptor: tinfoil.NewE2EE(), Preparer: tinfoil.NewPreparer("test")}
-		logs := captureInferenceDiagnostics(t)
+		logs := captureAuthorizationDiagnostics(t, server.authorizations)
 		used, err := server.inferAuthorized(context.Background(), newInferenceRecorder(), &authorizedRequest{provider: prov, route: route, key: key, body: []byte(`{"model":"model"}`), path: "/v1/chat/completions", contentType: "application/json", endpoint: e2ee.EndpointChat})
 		if err != nil {
 			t.Fatal(err)
